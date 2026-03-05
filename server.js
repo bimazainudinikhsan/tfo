@@ -974,9 +974,37 @@ function isYoutubeGateRequiredForEpisode(episodeNumber) {
   return safeEpisodeNumber >= YOUTUBE_SUBSCRIBE_MIN_EPISODE;
 }
 
+function normalizeConfiguredYoutubeOauthRedirectUri(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw.toLowerCase() === "auto") {
+    return "";
+  }
+
+  if (!/^https?:\/\//i.test(raw)) {
+    return raw;
+  }
+
+  try {
+    const parsed = new URL(raw);
+    parsed.search = "";
+    parsed.hash = "";
+
+    if (!parsed.pathname || parsed.pathname === "/") {
+      parsed.pathname = "/api/youtube/oauth/callback";
+    } else if (parsed.pathname.length > 1 && /\/+$/.test(parsed.pathname)) {
+      parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+    }
+
+    return parsed.toString();
+  } catch {
+    return raw;
+  }
+}
+
 function resolveYoutubeOAuthRedirectUri(req) {
-  if (YOUTUBE_OAUTH_REDIRECT_URI) {
-    return YOUTUBE_OAUTH_REDIRECT_URI;
+  const configured = normalizeConfiguredYoutubeOauthRedirectUri(YOUTUBE_OAUTH_REDIRECT_URI);
+  if (configured) {
+    return configured;
   }
 
   const protocol = String(req.headers["x-forwarded-proto"] || req.protocol || "http")
@@ -2305,6 +2333,7 @@ app.get("/api/youtube/verification/config", async (req, res) => {
       minEpisode: YOUTUBE_SUBSCRIBE_MIN_EPISODE,
       requiredChannelId: YOUTUBE_REQUIRED_CHANNEL_ID,
       requiredChannelUrl: buildYoutubeChannelUrl(),
+      oauthRedirectUri: resolveYoutubeOAuthRedirectUri(req),
       warning
     });
   } catch (error) {
@@ -2362,6 +2391,7 @@ app.post("/api/youtube/verification/start", async (req, res) => {
     return res.json({
       message: "URL verifikasi YouTube berhasil dibuat.",
       authUrl: authUrl.toString(),
+      redirectUri,
       stateExpiresInSeconds: YOUTUBE_OAUTH_STATE_TTL_SECONDS,
       viewerId,
       minEpisode: YOUTUBE_SUBSCRIBE_MIN_EPISODE,
