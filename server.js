@@ -139,7 +139,7 @@ const __dirname = path.dirname(__filename);
 const DATA_FILE = path.join(__dirname, "data", "library.json");
 const YOUTUBE_VERIFICATION_FILE = path.join(__dirname, "data", "youtube_verifications.json");
 const PUBLIC_DIR = path.join(__dirname, "public");
-const TMP_UPLOAD_DIR = path.join(__dirname, "tmp_uploads");
+const TMP_UPLOAD_DIR = resolveTemporaryUploadDir();
 
 const filePathCache = new Map();
 const naturalSort = new Intl.Collator("id", { numeric: true, sensitivity: "base" });
@@ -175,6 +175,19 @@ const upload = multer({
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(PUBLIC_DIR));
+
+function resolveTemporaryUploadDir() {
+  const envPath = String(process.env.TMP_UPLOAD_DIR || "").trim();
+  if (envPath) {
+    return envPath;
+  }
+
+  if (process.env.VERCEL) {
+    return "/tmp/teleminidrama_uploads";
+  }
+
+  return path.join(__dirname, "tmp_uploads");
+}
 
 function shouldUseFirebaseRealtimeDb() {
   return FIREBASE_RTDB_ENABLED;
