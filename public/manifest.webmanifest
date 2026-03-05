@@ -10,9 +10,9 @@
   "lang": "id-ID",
   "icons": [
     {
-      "src": "/assets/poster-placeholder.svg",
-      "type": "image/svg+xml",
-      "sizes": "any",
+      "src": "/assets/logo.png",
+      "type": "image/png",
+      "sizes": "512x512",
       "purpose": "any"
     }
   ]
