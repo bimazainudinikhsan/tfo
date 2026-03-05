@@ -1,0 +1,19 @@
+{
+  "name": "TOP FILM ONE",
+  "short_name": "TOP FILM ONE",
+  "description": "Platform streaming drama China viral dengan subtitle Indonesia.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#04121c",
+  "theme_color": "#0f2330",
+  "lang": "id-ID",
+  "icons": [
+    {
+      "src": "/assets/poster-placeholder.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "teleminidrama",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js",
+    "channel:list": "node scripts/list-channel-videos.js",
+    "channel:validate": "node scripts/validate-telegram-fileids.js",
+    "gdrive:refresh-token": "node scripts/oauth-refresh-token.js"
+  },
+  "dependencies": {
+    "axios": "^1.9.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "firebase-admin": "^12.7.0",
+    "form-data": "^4.0.4",
+    "multer": "^2.0.0"
+  }
+}

@@ -1,0 +1,9 @@
+node_modules
+.env
+npm-debug.log*
+tmp_uploads
+public/uploads
+serviceAccounts.json
+*firebase-adminsdk*.json
+client_secret*.json
+gen-lang-client-*.json

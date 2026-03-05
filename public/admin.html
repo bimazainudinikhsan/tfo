@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="id" translate="no" class="notranslate">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="google" content="notranslate" />
+    <meta http-equiv="Content-Language" content="id" />
+    <title>TeleMiniDrama Admin</title>
+    <link rel="stylesheet" href="/admin.css" />
+  </head>
+  <body translate="no" class="notranslate">
+    <div class="admin-shell">
+      <header class="admin-top">
+        <div>
+          <p class="eyebrow">Control Panel</p>
+          <h1>TeleMiniDrama Admin</h1>
+        </div>
+        <a class="link-app" href="/" target="_blank" rel="noreferrer">Buka Mini App</a>
+      </header>
+
+      <section class="card">
+        <h2>Autentikasi</h2>
+        <div class="token-row">
+          <input id="adminToken" type="password" placeholder="Masukkan ADMIN_TOKEN" />
+          <button id="saveTokenBtn" type="button">Simpan Token</button>
+        </div>
+        <p class="hint">Token disimpan di browser lokal (localStorage).</p>
+      </section>
+
+      <section class="grid-2">
+        <section class="card">
+          <div class="card-head">
+            <h2>Metadata Drama</h2>
+            <button id="reloadBtn" type="button" class="btn-soft">Reload</button>
+          </div>
+
+          <label class="field">
+            <span>Pilih Drama</span>
+            <select id="dramaSelect"></select>
+          </label>
+
+          <form id="dramaForm">
+            <label class="field">
+              <span>ID Drama (slug)</span>
+              <input id="dramaId" type="text" placeholder="contoh: the-double" />
+            </label>
+            <label class="field">
+              <span>Judul</span>
+              <input id="dramaTitle" type="text" required />
+            </label>
+            <div class="row">
+              <label class="field">
+                <span>Tahun</span>
+                <input id="dramaYear" type="number" min="1900" max="2099" />
+              </label>
+              <label class="field">
+                <span>Negara</span>
+                <input id="dramaCountry" type="text" placeholder="China" />
+              </label>
+            </div>
+            <label class="field">
+              <span>Poster URL</span>
+              <input id="dramaPoster" type="text" placeholder="/api/posters/telegram/..." />
+            </label>
+            <label class="field">
+              <span>Deskripsi</span>
+              <textarea id="dramaSynopsis" rows="4"></textarea>
+            </label>
+            <label class="field">
+              <span>Status Tayang</span>
+              <select id="dramaPublishStatus">
+                <option value="private">Private</option>
+                <option value="published">Published</option>
+              </select>
+            </label>
+            <div class="action-row">
+              <button id="saveDramaBtn" type="submit">Simpan Metadata</button>
+              <button id="previewMiniAppBtn" type="button" class="btn-soft">Preview Mini App</button>
+              <button id="publishNowBtn" type="button" class="btn-soft">Publish Sekarang</button>
+              <button id="deleteDramaBtn" type="button" class="btn-danger">Hapus Drama</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card">
+          <h2>Upload Poster</h2>
+          <label class="field">
+            <span>Pilih file gambar</span>
+            <div
+              id="posterDropzone"
+              class="dropzone"
+              role="button"
+              tabindex="0"
+              aria-label="Upload poster dengan drag and drop"
+            >
+              <p class="dropzone-title">Drag & drop poster di sini</p>
+              <p class="dropzone-subtitle">atau klik area ini untuk memilih file</p>
+              <input id="posterFile" type="file" accept="image/*" />
+            </div>
+            <p id="posterSelectedInfo" class="hint">Belum ada file poster dipilih.</p>
+          </label>
+          <button id="uploadPosterBtn" type="button">Upload Poster</button>
+          <p id="posterResult" class="hint">
+            Poster akan diupload ke Telegram Channel, lalu URL otomatis masuk ke field metadata.
+          </p>
+
+          <hr />
+
+          <h2>Upload Episode ke Google Drive</h2>
+          <label class="field">
+            <span>Folder ID Google Drive (opsional)</span>
+            <input id="gdriveUploadFolderId" type="text" placeholder="Kosong = GOOGLE_DRIVE_DEFAULT_FOLDER_ID" />
+          </label>
+          <div class="row">
+            <label class="field">
+              <span>Start Episode (opsional)</span>
+              <input id="gdriveUploadStartEpisode" type="number" min="1" placeholder="Kosongkan = lanjut otomatis" />
+            </label>
+            <label class="field checkbox">
+              <input id="gdriveUploadDetectFromFilename" type="checkbox" checked />
+              <span>Deteksi nomor episode dari nama file</span>
+            </label>
+          </div>
+          <div class="row">
+            <label class="field checkbox">
+              <input id="gdriveUploadOverwriteExisting" type="checkbox" />
+              <span>Timpa episode yang sudah ada (opsional)</span>
+            </label>
+            <label class="field checkbox">
+              <input id="gdriveUploadSwitchSource" type="checkbox" checked />
+              <span>Langsung ganti source ke gdrive</span>
+            </label>
+          </div>
+          <label class="field">
+            <span>Pilih banyak file video</span>
+            <div
+              id="gdriveUploadDropzone"
+              class="dropzone"
+              role="button"
+              tabindex="0"
+              aria-label="Upload episode video dengan drag and drop"
+            >
+              <p class="dropzone-title">Drag & drop file video episode di sini</p>
+              <p class="dropzone-subtitle">bisa pilih banyak file sekaligus</p>
+              <input id="gdriveUploadFiles" type="file" accept="video/*" multiple />
+            </div>
+            <p id="gdriveUploadSelectedInfo" class="hint">Belum ada file video dipilih.</p>
+          </label>
+          <button id="uploadToGdriveBtn" type="button">Upload ke Google Drive</button>
+
+          <hr />
+
+          <h2>Sinkronisasi Episode dari Google Drive</h2>
+          <label class="field">
+            <span>Folder ID Google Drive (opsional)</span>
+            <input id="gdriveSyncFolderId" type="text" placeholder="Kosong = folder drama tersimpan / default env" />
+          </label>
+          <div class="row">
+            <label class="field checkbox">
+              <input id="gdriveSyncOverwriteExisting" type="checkbox" />
+              <span>Timpa episode yang sudah punya gdriveFileId</span>
+            </label>
+            <label class="field checkbox">
+              <input id="gdriveSyncSwitchSource" type="checkbox" checked />
+              <span>Langsung ganti source ke gdrive</span>
+            </label>
+          </div>
+          <label class="field checkbox">
+            <input id="gdriveSyncCreateMissingEpisodes" type="checkbox" checked />
+            <span>Buat episode baru jika belum ada di metadata</span>
+          </label>
+          <button id="syncGdriveBtn" type="button" class="btn-soft">Sinkronkan Google Drive</button>
+        </section>
+      </section>
+
+      <section class="card">
+        <h2>Daftar Episode Tersimpan</h2>
+        <p id="episodeSummaryMeta" class="hint">Belum ada data.</p>
+        <div class="episode-table-wrap">
+          <table class="episode-table">
+            <thead>
+              <tr>
+                <th>Episode</th>
+                <th>Judul</th>
+                <th>Source</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="episodeTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Hasil Proses</h2>
+        <pre id="logBox" class="log-box">Siap.</pre>
+      </section>
+    </div>
+
+    <script type="module" src="/admin.js"></script>
+  </body>
+</html>
