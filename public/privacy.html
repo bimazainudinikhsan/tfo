@@ -108,7 +108,10 @@
         <ul>
           <li>Data teknis dasar untuk menjalankan aplikasi (contoh: viewer id, status verifikasi).</li>
           <li>Data progres tontonan yang disimpan di perangkat pengguna (local storage).</li>
-          <li>Data autentikasi pihak ketiga jika pengguna memakai fitur verifikasi YouTube.</li>
+          <li>
+            Data autentikasi pihak ketiga jika pengguna memakai fitur verifikasi YouTube (contoh: token akses sementara
+            dan status subscribe channel yang diwajibkan).
+          </li>
         </ul>
 
         <h2>Penggunaan Data</h2>
@@ -130,10 +133,32 @@
           Penggunaan layanan tersebut juga tunduk pada kebijakan privasi masing-masing penyedia.
         </p>
 
+        <h2>Penggunaan Data Pengguna Google</h2>
+        <ul>
+          <li>
+            Jika fitur verifikasi YouTube aktif, aplikasi meminta izin terbatas untuk membaca status subscribe user
+            terhadap channel yang ditentukan.
+          </li>
+          <li>Data Google digunakan hanya untuk validasi akses konten (unlock episode tertentu) dan tidak untuk iklan.</li>
+          <li>
+            Kami tidak menjual data pengguna Google ke pihak ketiga. Data tidak dipakai untuk profil iklan atau praktik
+            data broker.
+          </li>
+          <li>
+            Token akses OAuth tidak ditampilkan ke publik dan digunakan hanya untuk proses verifikasi sesuai izin user.
+          </li>
+        </ul>
+
+        <h2>Penghapusan Akses</h2>
+        <p>
+          Pengguna dapat mencabut akses akun Google kapan saja melalui pengaturan keamanan akun Google. Setelah akses
+          dicabut, aplikasi tidak dapat lagi memakai data Google dari izin tersebut.
+        </p>
+
         <h2>Kontak</h2>
         <p>
           Untuk pertanyaan terkait privasi, silakan hubungi pengembang melalui email:
-          <a href="mailto:ftop7921@gmail.com">ftop7921@gmail.com</a>.
+          <a href="mailto:bimaikhsan.bi@gmail.com">bimaikhsan.bi@gmail.com</a>.
         </p>
 
         <a class="back" href="/">Kembali ke TOP FILM ONE</a>
