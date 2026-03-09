@@ -84,6 +84,11 @@ const YOUTUBE_OAUTH_STATE_TTL_SECONDS =
   Number.isFinite(parsedYoutubeOAuthStateTtlSec) && parsedYoutubeOAuthStateTtlSec > 0
     ? parsedYoutubeOAuthStateTtlSec
     : 900;
+const GA4_MEASUREMENT_ID = String(process.env.GA4_MEASUREMENT_ID || "").trim();
+const GA4_ANALYTICS_ENABLED = parseBoolean(
+  process.env.GA4_ANALYTICS_ENABLED || (GA4_MEASUREMENT_ID ? "true" : "false"),
+  Boolean(GA4_MEASUREMENT_ID)
+);
 const YOUTUBE_OAUTH_STATE_TTL_MS = YOUTUBE_OAUTH_STATE_TTL_SECONDS * 1000;
 const YOUTUBE_VERIFY_API_BASE = "https://www.googleapis.com/youtube/v3/subscriptions";
 const GOOGLE_DRIVE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -133,11 +138,15 @@ const FIREBASE_YOUTUBE_VERIFICATIONS_PATH = String(
 )
   .trim()
   .replace(/^\/+|\/+$/g, "");
+const FIREBASE_ANALYTICS_PATH = String(process.env.FIREBASE_ANALYTICS_PATH || "teleminidrama/analytics")
+  .trim()
+  .replace(/^\/+|\/+$/g, "");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DATA_FILE = path.join(__dirname, "data", "library.json");
 const YOUTUBE_VERIFICATION_FILE = path.join(__dirname, "data", "youtube_verifications.json");
+const ANALYTICS_FILE = path.join(__dirname, "data", "analytics.json");
 const PUBLIC_DIR = path.join(__dirname, "public");
 const TMP_UPLOAD_DIR = resolveTemporaryUploadDir();
 
@@ -248,6 +257,10 @@ function assertFirebaseRealtimeDbConfig() {
 
   if (!FIREBASE_YOUTUBE_VERIFICATIONS_PATH) {
     throw new Error("FIREBASE_YOUTUBE_VERIFICATIONS_PATH tidak boleh kosong.");
+  }
+
+  if (!FIREBASE_ANALYTICS_PATH) {
+    throw new Error("FIREBASE_ANALYTICS_PATH tidak boleh kosong.");
   }
 
   return credential;
@@ -929,6 +942,23 @@ function getViewerIdFromRequest(req) {
   return normalizeViewerId(headerViewerId || headerTelegramUserId || queryViewerId || bodyViewerId || "");
 }
 
+function isValidGa4MeasurementId(value) {
+  return /^G-[A-Z0-9]{5,}$/i.test(String(value || "").trim());
+}
+
+function getPublicAppConfig() {
+  const measurementId = String(GA4_MEASUREMENT_ID || "").trim();
+  const ga4Enabled = GA4_ANALYTICS_ENABLED && isValidGa4MeasurementId(measurementId);
+  return {
+    analytics: {
+      ga4: {
+        enabled: ga4Enabled,
+        measurementId: ga4Enabled ? measurementId : ""
+      }
+    }
+  };
+}
+
 function buildYoutubeChannelUrl() {
   if (YOUTUBE_REQUIRED_CHANNEL_URL) {
     return YOUTUBE_REQUIRED_CHANNEL_URL;
@@ -1091,6 +1121,279 @@ async function writeYoutubeVerificationStore(store) {
   }
 
   await writeFile(YOUTUBE_VERIFICATION_FILE, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
+}
+
+function normalizeAnalyticsKey(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  return raw.replace(/[^a-zA-Z0-9:_-]/g, "").slice(0, 120);
+}
+
+function normalizeEpisodeNumberKey(value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return "";
+  }
+
+  return String(parsed);
+}
+
+function sanitizeCounter(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 0;
+  }
+
+  return Math.floor(parsed);
+}
+
+function createEmptyAnalyticsStore() {
+  return {
+    totals: {
+      visits: 0,
+      visitors: 0
+    },
+    visitorIds: {},
+    dramaClicks: {},
+    episodeClicks: {}
+  };
+}
+
+function normalizeVisitorIdStore(input) {
+  const normalized = {};
+  const source = input && typeof input === "object" ? input : {};
+  for (const [viewerIdRaw, value] of Object.entries(source)) {
+    const viewerId = normalizeViewerId(viewerIdRaw);
+    if (!viewerId) {
+      continue;
+    }
+
+    if (value && typeof value === "object") {
+      normalized[viewerId] = {
+        firstSeenAt: String(value.firstSeenAt || "").trim(),
+        nonce: String(value.nonce || "").trim()
+      };
+      continue;
+    }
+
+    normalized[viewerId] = {
+      firstSeenAt: "",
+      nonce: ""
+    };
+  }
+
+  return normalized;
+}
+
+function normalizeDramaClickStore(input) {
+  const normalized = {};
+  const source = input && typeof input === "object" ? input : {};
+  for (const [dramaIdRaw, countValue] of Object.entries(source)) {
+    const dramaId = normalizeAnalyticsKey(dramaIdRaw);
+    if (!dramaId) {
+      continue;
+    }
+
+    normalized[dramaId] = sanitizeCounter(countValue);
+  }
+
+  return normalized;
+}
+
+function normalizeEpisodeClickStore(input) {
+  const normalized = {};
+  const source = input && typeof input === "object" ? input : {};
+  for (const [dramaIdRaw, episodeStore] of Object.entries(source)) {
+    const dramaId = normalizeAnalyticsKey(dramaIdRaw);
+    if (!dramaId || !episodeStore || typeof episodeStore !== "object") {
+      continue;
+    }
+
+    const normalizedEpisodes = {};
+    for (const [episodeKeyRaw, countValue] of Object.entries(episodeStore)) {
+      const episodeKey = normalizeEpisodeNumberKey(episodeKeyRaw);
+      if (!episodeKey) {
+        continue;
+      }
+
+      normalizedEpisodes[episodeKey] = sanitizeCounter(countValue);
+    }
+
+    normalized[dramaId] = normalizedEpisodes;
+  }
+
+  return normalized;
+}
+
+function normalizeAnalyticsStore(input) {
+  const source = input && typeof input === "object" ? input : {};
+  const normalized = createEmptyAnalyticsStore();
+  normalized.visitorIds = normalizeVisitorIdStore(source.visitorIds);
+  normalized.dramaClicks = normalizeDramaClickStore(source.dramaClicks);
+  normalized.episodeClicks = normalizeEpisodeClickStore(source.episodeClicks);
+  normalized.totals.visits = sanitizeCounter(source?.totals?.visits);
+  normalized.totals.visitors = sanitizeCounter(source?.totals?.visitors);
+
+  const knownVisitorCount = Object.keys(normalized.visitorIds).length;
+  if (knownVisitorCount > normalized.totals.visitors) {
+    normalized.totals.visitors = knownVisitorCount;
+  }
+
+  return normalized;
+}
+
+function sanitizeAnalyticsStatsPayload(input) {
+  const store = normalizeAnalyticsStore(input);
+  return {
+    totals: {
+      visits: store.totals.visits,
+      visitors: store.totals.visitors
+    },
+    dramaClicks: store.dramaClicks,
+    episodeClicks: store.episodeClicks
+  };
+}
+
+async function readAnalyticsStore() {
+  if (shouldUseFirebaseRealtimeDb()) {
+    const remoteValue = await readJsonFromFirebasePath(FIREBASE_ANALYTICS_PATH, null);
+    if (remoteValue) {
+      return normalizeAnalyticsStore(remoteValue);
+    }
+
+    try {
+      const raw = await readFile(ANALYTICS_FILE, "utf-8");
+      const localStore = normalizeAnalyticsStore(JSON.parse(raw));
+      await writeJsonToFirebasePath(FIREBASE_ANALYTICS_PATH, localStore);
+      return localStore;
+    } catch {
+      return createEmptyAnalyticsStore();
+    }
+  }
+
+  try {
+    const raw = await readFile(ANALYTICS_FILE, "utf-8");
+    return normalizeAnalyticsStore(JSON.parse(raw));
+  } catch {
+    return createEmptyAnalyticsStore();
+  }
+}
+
+async function writeAnalyticsStore(store) {
+  const next = normalizeAnalyticsStore(store);
+  if (shouldUseFirebaseRealtimeDb()) {
+    await writeJsonToFirebasePath(FIREBASE_ANALYTICS_PATH, next);
+    return;
+  }
+
+  await writeFile(ANALYTICS_FILE, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
+}
+
+async function incrementFirebaseCounter(pathValue, delta = 1) {
+  const amount = Math.max(0, Math.floor(Number(delta) || 0));
+  if (!amount) {
+    return;
+  }
+
+  const db = await getFirebaseRealtimeDbClient();
+  await db.ref(pathValue).transaction((currentValue) => sanitizeCounter(currentValue) + amount);
+}
+
+async function trackWebsiteVisit(viewerId) {
+  const safeViewerId = normalizeViewerId(viewerId);
+  if (shouldUseFirebaseRealtimeDb()) {
+    await incrementFirebaseCounter(`${FIREBASE_ANALYTICS_PATH}/totals/visits`, 1);
+    if (safeViewerId) {
+      const db = await getFirebaseRealtimeDbClient();
+      const visitorRef = db.ref(`${FIREBASE_ANALYTICS_PATH}/visitorIds/${safeViewerId}`);
+      const marker = randomUUID().replace(/-/g, "");
+      const visitedAt = new Date().toISOString();
+      const transactionResult = await visitorRef.transaction((currentValue) => {
+        if (currentValue && typeof currentValue === "object") {
+          return currentValue;
+        }
+
+        return {
+          firstSeenAt: visitedAt,
+          nonce: marker
+        };
+      });
+
+      const storedValue = transactionResult.snapshot.val();
+      if (storedValue && storedValue.nonce === marker) {
+        await incrementFirebaseCounter(`${FIREBASE_ANALYTICS_PATH}/totals/visitors`, 1);
+      }
+    }
+
+    const latest = await readAnalyticsStore();
+    return sanitizeAnalyticsStatsPayload(latest);
+  }
+
+  const store = await readAnalyticsStore();
+  store.totals.visits = sanitizeCounter(store.totals.visits) + 1;
+  if (safeViewerId && !store.visitorIds[safeViewerId]) {
+    store.visitorIds[safeViewerId] = {
+      firstSeenAt: new Date().toISOString(),
+      nonce: ""
+    };
+    store.totals.visitors = sanitizeCounter(store.totals.visitors) + 1;
+  }
+
+  await writeAnalyticsStore(store);
+  return sanitizeAnalyticsStatsPayload(store);
+}
+
+async function trackDramaClick(dramaId) {
+  const safeDramaId = normalizeAnalyticsKey(dramaId);
+  if (!safeDramaId) {
+    throw new Error("dramaId tidak valid.");
+  }
+
+  if (shouldUseFirebaseRealtimeDb()) {
+    await incrementFirebaseCounter(`${FIREBASE_ANALYTICS_PATH}/dramaClicks/${safeDramaId}`, 1);
+    const latest = await readAnalyticsStore();
+    return sanitizeAnalyticsStatsPayload(latest);
+  }
+
+  const store = await readAnalyticsStore();
+  const current = sanitizeCounter(store.dramaClicks[safeDramaId]);
+  store.dramaClicks[safeDramaId] = current + 1;
+  await writeAnalyticsStore(store);
+  return sanitizeAnalyticsStatsPayload(store);
+}
+
+async function trackEpisodeClick(dramaId, episodeNumber) {
+  const safeDramaId = normalizeAnalyticsKey(dramaId);
+  if (!safeDramaId) {
+    throw new Error("dramaId tidak valid.");
+  }
+
+  const safeEpisodeNumber = normalizeEpisodeNumberKey(episodeNumber);
+  if (!safeEpisodeNumber) {
+    throw new Error("episodeNumber tidak valid.");
+  }
+
+  if (shouldUseFirebaseRealtimeDb()) {
+    await incrementFirebaseCounter(
+      `${FIREBASE_ANALYTICS_PATH}/episodeClicks/${safeDramaId}/${safeEpisodeNumber}`,
+      1
+    );
+    const latest = await readAnalyticsStore();
+    return sanitizeAnalyticsStatsPayload(latest);
+  }
+
+  const store = await readAnalyticsStore();
+  if (!store.episodeClicks[safeDramaId] || typeof store.episodeClicks[safeDramaId] !== "object") {
+    store.episodeClicks[safeDramaId] = {};
+  }
+
+  const current = sanitizeCounter(store.episodeClicks[safeDramaId][safeEpisodeNumber]);
+  store.episodeClicks[safeDramaId][safeEpisodeNumber] = current + 1;
+  await writeAnalyticsStore(store);
+  return sanitizeAnalyticsStatsPayload(store);
 }
 
 async function getYoutubeViewerVerificationStatus(viewerId) {
@@ -2310,6 +2613,94 @@ app.get("/api/library", async (_, res) => {
   } catch (error) {
     res.status(500).json({
       message: "Gagal membaca daftar drama.",
+      detail: error.message
+    });
+  }
+});
+
+app.get("/api/public-config", (_, res) => {
+  res.setHeader("cache-control", "no-store");
+  res.json(getPublicAppConfig());
+});
+
+app.get("/api/analytics/stats", async (_, res) => {
+  try {
+    const store = await readAnalyticsStore();
+    return res.json(sanitizeAnalyticsStatsPayload(store));
+  } catch (error) {
+    return res.status(500).json({
+      message: "Gagal membaca statistik pengunjung.",
+      detail: error.message
+    });
+  }
+});
+
+app.post("/api/analytics/visit", async (req, res) => {
+  try {
+    const viewerId = getViewerIdFromRequest(req);
+    const stats = await trackWebsiteVisit(viewerId);
+    return res.json({
+      message: "Kunjungan berhasil dicatat.",
+      viewerId,
+      stats
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Gagal mencatat kunjungan.",
+      detail: error.message
+    });
+  }
+});
+
+app.post("/api/analytics/drama-click", async (req, res) => {
+  try {
+    const dramaId = normalizeAnalyticsKey(req.body?.dramaId || req.query?.dramaId);
+    if (!dramaId) {
+      return res.status(400).json({
+        message: "dramaId wajib diisi."
+      });
+    }
+
+    const stats = await trackDramaClick(dramaId);
+    return res.json({
+      message: "Klik drama berhasil dicatat.",
+      dramaId,
+      stats
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Gagal mencatat klik drama.",
+      detail: error.message
+    });
+  }
+});
+
+app.post("/api/analytics/episode-click", async (req, res) => {
+  try {
+    const dramaId = normalizeAnalyticsKey(req.body?.dramaId || req.query?.dramaId);
+    const episodeNumber = normalizeEpisodeNumberKey(req.body?.episodeNumber || req.query?.episodeNumber);
+    if (!dramaId) {
+      return res.status(400).json({
+        message: "dramaId wajib diisi."
+      });
+    }
+
+    if (!episodeNumber) {
+      return res.status(400).json({
+        message: "episodeNumber wajib berupa angka positif."
+      });
+    }
+
+    const stats = await trackEpisodeClick(dramaId, episodeNumber);
+    return res.json({
+      message: "Klik episode berhasil dicatat.",
+      dramaId,
+      episodeNumber: Number(episodeNumber),
+      stats
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Gagal mencatat klik episode.",
       detail: error.message
     });
   }
@@ -3953,9 +4344,14 @@ async function startServer() {
 
   app.listen(PORT, () => {
     console.log(`TeleMiniDrama aktif di http://localhost:${PORT}`);
+    if (GA4_ANALYTICS_ENABLED && isValidGa4MeasurementId(GA4_MEASUREMENT_ID)) {
+      console.log(`GA4 aktif (${GA4_MEASUREMENT_ID}).`);
+    } else {
+      console.log("GA4 nonaktif.");
+    }
     if (shouldUseFirebaseRealtimeDb()) {
       console.log(
-        `Data store: Firebase RTDB (${FIREBASE_LIBRARY_PATH}, ${FIREBASE_YOUTUBE_VERIFICATIONS_PATH})`
+        `Data store: Firebase RTDB (${FIREBASE_LIBRARY_PATH}, ${FIREBASE_YOUTUBE_VERIFICATIONS_PATH}, ${FIREBASE_ANALYTICS_PATH})`
       );
     } else {
       console.log(`Data store: local JSON file (${DATA_FILE})`);

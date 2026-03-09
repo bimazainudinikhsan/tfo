@@ -16,6 +16,7 @@ const YOUTUBE_VIEWER_ID_KEY = "top_film_one_viewer_id_v1";
 const YOUTUBE_VERIFY_MESSAGE_TYPE = "top-film-one-youtube-verify";
 const SUBSCRIBE_PROMO_COOLDOWN_KEY = "top_film_one_subscribe_promo_cooldown_until_v1";
 const SUBSCRIBE_PROMO_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const countFormatter = new Intl.NumberFormat("id-ID");
 const pageParams = new URLSearchParams(window.location.search || "");
 
 function getPageParam(name) {
@@ -184,9 +185,18 @@ const state = {
   pendingResumeSeconds: null,
   lastProgressSavedAt: 0,
   librarySignature: "",
+  engagementSignature: "",
   realtimePollTimer: null,
   realtimePollInFlight: false,
   viewerId: getOrCreateViewerId(),
+  engagement: {
+    totals: {
+      visits: 0,
+      visitors: 0
+    },
+    dramaClicks: {},
+    episodeClicks: {}
+  },
   youtubeGate: {
     enabled: false,
     verified: true,
@@ -220,6 +230,7 @@ const elements = {
   homeBtn: document.getElementById("homeBtn"),
   dramaSearch: document.getElementById("dramaSearch"),
   homeScreen: document.getElementById("homeScreen"),
+  visitorStats: document.getElementById("visitorStats"),
   resumeSection: document.getElementById("resumeSection"),
   resumeGrid: document.getElementById("resumeGrid"),
   savedSection: document.getElementById("savedSection"),
@@ -232,6 +243,7 @@ const elements = {
   previewTitle: document.getElementById("previewTitle"),
   previewTag: document.getElementById("previewTag"),
   previewEpisodeCount: document.getElementById("previewEpisodeCount"),
+  previewDramaClicks: document.getElementById("previewDramaClicks"),
   previewSynopsis: document.getElementById("previewSynopsis"),
   watchNowBtn: document.getElementById("watchNowBtn"),
   detailLayout: document.getElementById("detailLayout"),
@@ -304,6 +316,321 @@ function buildRequestHeaders(extraHeaders = {}) {
     ...buildAdminPreviewHeaders(),
     ...(extraHeaders || {})
   };
+}
+
+const GA4_SCRIPT_SRC_BASE = "https://www.googletagmanager.com/gtag/js";
+let ga4BootstrappedId = "";
+
+function isValidGa4MeasurementId(value) {
+  return /^G-[A-Z0-9]{5,}$/i.test(String(value || "").trim());
+}
+
+function ensureGa4ScriptTag(measurementId) {
+  if (!measurementId) {
+    return;
+  }
+
+  if (document.querySelector(`script[data-ga4-id="${measurementId}"]`)) {
+    return;
+  }
+
+  const script = document.createElement("script");
+  script.async = true;
+  script.src = `${GA4_SCRIPT_SRC_BASE}?id=${encodeURIComponent(measurementId)}`;
+  script.setAttribute("data-ga4-id", measurementId);
+  document.head.appendChild(script);
+}
+
+function initGa4Tracking(measurementId) {
+  const safeMeasurementId = String(measurementId || "").trim();
+  if (!isValidGa4MeasurementId(safeMeasurementId)) {
+    return false;
+  }
+
+  if (ga4BootstrappedId === safeMeasurementId) {
+    return true;
+  }
+
+  ensureGa4ScriptTag(safeMeasurementId);
+  window.dataLayer = window.dataLayer || [];
+  window.gtag =
+    window.gtag ||
+    function gtag() {
+      window.dataLayer.push(arguments);
+    };
+  window.gtag("js", new Date());
+  window.gtag("config", safeMeasurementId, {
+    anonymize_ip: true,
+    send_page_view: true
+  });
+  ga4BootstrappedId = safeMeasurementId;
+  return true;
+}
+
+async function setupGa4TrackingFromServerConfig() {
+  try {
+    const response = await fetch("/api/public-config", {
+      headers: buildRequestHeaders()
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return;
+    }
+
+    const enabled = Boolean(payload?.analytics?.ga4?.enabled);
+    const measurementId = String(payload?.analytics?.ga4?.measurementId || "").trim();
+    if (!enabled) {
+      return;
+    }
+
+    initGa4Tracking(measurementId);
+  } catch {
+    // Abaikan error analytics eksternal agar app utama tetap jalan.
+  }
+}
+
+function sendGaEvent(eventName, params = {}) {
+  if (typeof window.gtag !== "function") {
+    return;
+  }
+
+  try {
+    window.gtag("event", String(eventName || "").trim(), params || {});
+  } catch {
+    // Abaikan error tracking eksternal.
+  }
+}
+
+function sanitizeCountValue(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 0;
+  }
+
+  return Math.floor(parsed);
+}
+
+function normalizeDramaClickRecord(input) {
+  const normalized = {};
+  const source = input && typeof input === "object" ? input : {};
+  for (const [dramaIdRaw, value] of Object.entries(source)) {
+    const dramaId = String(dramaIdRaw || "").trim();
+    if (!dramaId) {
+      continue;
+    }
+
+    normalized[dramaId] = sanitizeCountValue(value);
+  }
+
+  return normalized;
+}
+
+function normalizeEpisodeClickRecord(input) {
+  const normalized = {};
+  const source = input && typeof input === "object" ? input : {};
+  for (const [dramaIdRaw, episodeRecord] of Object.entries(source)) {
+    const dramaId = String(dramaIdRaw || "").trim();
+    if (!dramaId || !episodeRecord || typeof episodeRecord !== "object") {
+      continue;
+    }
+
+    const normalizedEpisodes = {};
+    for (const [episodeKeyRaw, value] of Object.entries(episodeRecord)) {
+      const episodeKey = String(episodeKeyRaw || "").trim();
+      if (!episodeKey) {
+        continue;
+      }
+
+      normalizedEpisodes[episodeKey] = sanitizeCountValue(value);
+    }
+
+    normalized[dramaId] = normalizedEpisodes;
+  }
+
+  return normalized;
+}
+
+function normalizeEngagementPayload(input) {
+  return {
+    totals: {
+      visits: sanitizeCountValue(input?.totals?.visits),
+      visitors: sanitizeCountValue(input?.totals?.visitors)
+    },
+    dramaClicks: normalizeDramaClickRecord(input?.dramaClicks),
+    episodeClicks: normalizeEpisodeClickRecord(input?.episodeClicks)
+  };
+}
+
+function buildEngagementSignature(input) {
+  return JSON.stringify(normalizeEngagementPayload(input));
+}
+
+function formatCount(value) {
+  return countFormatter.format(sanitizeCountValue(value));
+}
+
+function getDramaClickCount(dramaId) {
+  const safeDramaId = String(dramaId || "").trim();
+  if (!safeDramaId) {
+    return 0;
+  }
+
+  return sanitizeCountValue(state.engagement?.dramaClicks?.[safeDramaId]);
+}
+
+function getEpisodeClickCount(dramaId, episodeNumber) {
+  const safeDramaId = String(dramaId || "").trim();
+  const safeEpisodeNumber = String(Number(episodeNumber) || "").trim();
+  if (!safeDramaId || !safeEpisodeNumber) {
+    return 0;
+  }
+
+  return sanitizeCountValue(state.engagement?.episodeClicks?.[safeDramaId]?.[safeEpisodeNumber]);
+}
+
+function renderVisitorStats() {
+  if (!elements.visitorStats) {
+    return;
+  }
+
+  const visitors = sanitizeCountValue(state.engagement?.totals?.visitors);
+  const visits = sanitizeCountValue(state.engagement?.totals?.visits);
+  elements.visitorStats.textContent = `Total pengunjung: ${formatCount(visitors)} orang | ${formatCount(
+    visits
+  )} kunjungan`;
+}
+
+function renderPreviewDramaClickCount(dramaId) {
+  if (!elements.previewDramaClicks) {
+    return;
+  }
+
+  const count = getDramaClickCount(dramaId);
+  elements.previewDramaClicks.textContent = `Drama ini diklik ${formatCount(count)} kali`;
+}
+
+function applyEngagementStats(input, { rerender = true } = {}) {
+  const normalized = normalizeEngagementPayload(input);
+  const signature = buildEngagementSignature(normalized);
+  const changed = signature !== state.engagementSignature;
+  state.engagement = normalized;
+  state.engagementSignature = signature;
+  renderVisitorStats();
+
+  if (!state.drama) {
+    return;
+  }
+
+  renderPreviewDramaClickCount(state.drama.id);
+  if (!rerender || !changed) {
+    return;
+  }
+
+  if (state.viewMode === "home") {
+    renderHomeGrid();
+    return;
+  }
+
+  if (state.viewMode === "player") {
+    renderEpisodeSheet();
+  }
+}
+
+async function fetchEngagementStats({ silent = false, apply = true } = {}) {
+  try {
+    const response = await fetch("/api/analytics/stats", {
+      headers: buildRequestHeaders()
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.message || "Gagal membaca statistik pengunjung.");
+    }
+
+    if (apply) {
+      applyEngagementStats(payload);
+    }
+    return payload;
+  } catch (error) {
+    if (!silent) {
+      throw error;
+    }
+
+    return null;
+  }
+}
+
+async function trackWebsiteVisit() {
+  const response = await fetch("/api/analytics/visit", {
+    method: "POST",
+    headers: buildRequestHeaders({
+      "content-type": "application/json"
+    }),
+    body: JSON.stringify({
+      viewerId: state.viewerId
+    })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.message || "Gagal mencatat kunjungan.");
+  }
+
+  applyEngagementStats(payload.stats || payload);
+}
+
+async function trackDramaClickMetric(dramaId) {
+  const safeDramaId = String(dramaId || "").trim();
+  if (!safeDramaId) {
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/analytics/drama-click", {
+      method: "POST",
+      headers: buildRequestHeaders({
+        "content-type": "application/json"
+      }),
+      body: JSON.stringify({
+        dramaId: safeDramaId
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return;
+    }
+
+    applyEngagementStats(payload.stats || payload);
+  } catch {
+    // Abaikan error analytics agar UX utama tidak terganggu.
+  }
+}
+
+async function trackEpisodeClickMetric(dramaId, episodeNumber) {
+  const safeDramaId = String(dramaId || "").trim();
+  const safeEpisodeNumber = Number(episodeNumber);
+  if (!safeDramaId || !Number.isInteger(safeEpisodeNumber) || safeEpisodeNumber <= 0) {
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/analytics/episode-click", {
+      method: "POST",
+      headers: buildRequestHeaders({
+        "content-type": "application/json"
+      }),
+      body: JSON.stringify({
+        dramaId: safeDramaId,
+        episodeNumber: safeEpisodeNumber
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return;
+    }
+
+    applyEngagementStats(payload.stats || payload);
+  } catch {
+    // Abaikan error analytics agar UX utama tidak terganggu.
+  }
 }
 
 function isYoutubeVerificationRequired() {
@@ -882,11 +1209,18 @@ function startRealtimeLibraryPolling() {
 
     state.realtimePollInFlight = true;
     try {
-      const payload = await fetchLibraryPayload();
+      const [payload, engagementPayload] = await Promise.all([
+        fetchLibraryPayload(),
+        fetchEngagementStats({ silent: true, apply: false })
+      ]);
       const nextDramas = Array.isArray(payload?.dramas) ? payload.dramas : [];
       const nextSignature = buildLibrarySignature(nextDramas);
       if (nextSignature !== state.librarySignature) {
         applyLibraryDramas(nextDramas, { fromPolling: true });
+      }
+
+      if (engagementPayload) {
+        applyEngagementStats(engagementPayload);
       }
     } catch {
       // Abaikan error polling background.
@@ -977,10 +1311,14 @@ function renderHomeGrid() {
     title.className = "card-title";
     title.textContent = drama.title;
 
+    const meta = document.createElement("div");
+    meta.className = "card-meta";
+    meta.textContent = `${formatCount(getDramaClickCount(drama.id))} klik`;
+
     cover.appendChild(image);
-    button.append(cover, title);
+    button.append(cover, title, meta);
     button.addEventListener("click", async () => {
-      await setDramaById(drama.id, { openFirstEpisode: false });
+      await setDramaById(drama.id, { openFirstEpisode: false, trackDramaClick: true });
       setViewMode("preview");
     });
 
@@ -1039,9 +1377,9 @@ function renderHomeCollections() {
       const drama = item.drama;
       const episodeNumber = Number(item.progress?.episodeNumber) || 1;
       const timeSec = Math.max(0, Number(item.progress?.timeSec) || 0);
-      const metaText = `EP.${episodeNumber} • ${formatPlaybackTime(timeSec)}`;
+      const metaText = `EP.${episodeNumber} - ${formatPlaybackTime(timeSec)}`;
       const card = buildHomeCollectionCard(drama, metaText, async () => {
-        await setDramaById(drama.id, { openFirstEpisode: false });
+        await setDramaById(drama.id, { openFirstEpisode: false, trackDramaClick: true });
         const resume = resolveResumeTargetForDrama(drama);
         if (!resume.episode) {
           setViewMode("preview");
@@ -1075,7 +1413,7 @@ function renderHomeCollections() {
       const episodeCount = getSortedEpisodes(drama).length;
       const metaText = `${episodeCount} Episode`;
       const card = buildHomeCollectionCard(drama, metaText, async () => {
-        await setDramaById(drama.id, { openFirstEpisode: false });
+        await setDramaById(drama.id, { openFirstEpisode: false, trackDramaClick: true });
         setViewMode("preview");
       });
       elements.savedGrid.appendChild(card);
@@ -1123,6 +1461,7 @@ function renderPreview(drama) {
   elements.previewTag.textContent = detectDramaTag(drama);
   elements.previewEpisodeCount.textContent = String(episodeCount);
   elements.previewSynopsis.textContent = drama.synopsis || "-";
+  renderPreviewDramaClickCount(drama.id);
   elements.watchNowBtn.disabled = episodeCount === 0 || allEpisodesLocked;
   if (episodeCount === 0) {
     elements.watchNowBtn.textContent = "Belum Ada Episode";
@@ -1171,7 +1510,15 @@ function renderEpisodeSheet() {
     ]
       .filter(Boolean)
       .join(" ");
-    button.textContent = `EP${episode.number}`;
+    const label = document.createElement("span");
+    label.className = "episode-chip-label";
+    label.textContent = `EP${episode.number}`;
+
+    const clickMeta = document.createElement("span");
+    clickMeta.className = "episode-chip-click";
+    clickMeta.textContent = `${formatCount(getEpisodeClickCount(state.drama?.id, episode.number))} klik`;
+
+    button.append(label, clickMeta);
     if (isLocked) {
       button.title = lockState.manual
         ? `Episode ${episode.number} dikunci admin.`
@@ -1428,7 +1775,7 @@ async function playNextEpisodeIfAny() {
     return;
   }
 
-  await openEpisode(nextEpisode.number);
+  await openEpisode(nextEpisode.number, { trackEpisodeClick: false });
 }
 
 function setViewMode(mode) {
@@ -1482,7 +1829,7 @@ function clearVideo() {
   updateCenterPlayButton();
 }
 
-async function openEpisode(episodeNumber, { resumeSeconds = null } = {}) {
+async function openEpisode(episodeNumber, { resumeSeconds = null, trackEpisodeClick = true } = {}) {
   persistCurrentWatchProgress({ force: true });
 
   const episode = (state.drama?.episodes || []).find(
@@ -1515,6 +1862,15 @@ async function openEpisode(episodeNumber, { resumeSeconds = null } = {}) {
       requireYoutube: true
     });
     return;
+  }
+
+  if (trackEpisodeClick) {
+    trackEpisodeClickMetric(state.drama?.id, episode.number);
+    sendGaEvent("episode_select", {
+      drama_id: String(state.drama?.id || ""),
+      drama_title: String(state.drama?.title || ""),
+      episode_number: Number(episode.number) || 0
+    });
   }
 
   state.currentEpisodeNumber = episode.number;
@@ -1622,13 +1978,20 @@ async function openEpisode(episodeNumber, { resumeSeconds = null } = {}) {
   }
 }
 
-async function setDramaById(dramaId, { openFirstEpisode = false } = {}) {
+async function setDramaById(dramaId, { openFirstEpisode = false, trackDramaClick = false } = {}) {
   const drama = state.dramas.find((item) => item.id === dramaId);
   if (!drama) {
     return;
   }
 
   state.drama = drama;
+  if (trackDramaClick) {
+    trackDramaClickMetric(drama.id);
+    sendGaEvent("drama_select", {
+      drama_id: String(drama.id || ""),
+      drama_title: String(drama.title || "")
+    });
+  }
   if (elements.dramaPicker) {
     elements.dramaPicker.value = drama.id;
   }
@@ -1645,7 +2008,8 @@ async function setDramaById(dramaId, { openFirstEpisode = false } = {}) {
 
   if (firstEpisode && openFirstEpisode) {
     await openEpisode(resumeTarget.episode.number, {
-      resumeSeconds: resumeTarget.resumeSeconds
+      resumeSeconds: resumeTarget.resumeSeconds,
+      trackEpisodeClick: false
     });
   } else if (firstEpisode) {
     clearVideo();
@@ -2026,7 +2390,7 @@ function wireEvents() {
 
   if (elements.dramaPicker) {
     elements.dramaPicker.addEventListener("change", async () => {
-      await setDramaById(elements.dramaPicker.value, { openFirstEpisode: false });
+      await setDramaById(elements.dramaPicker.value, { openFirstEpisode: false, trackDramaClick: true });
       setViewMode("preview");
     });
   }
@@ -2069,6 +2433,8 @@ async function init() {
     setPlayerLoader(false);
     syncPlaybackControls();
     updateCenterPlayButton();
+    setupGa4TrackingFromServerConfig();
+    renderVisitorStats();
     await loadYoutubeGateConfig();
     await refreshYoutubeVerificationStatus({ silent: true });
 
@@ -2078,6 +2444,12 @@ async function init() {
     }
 
     applyLibraryDramas(payload.dramas);
+    await fetchEngagementStats({ silent: true });
+    try {
+      await trackWebsiteVisit();
+    } catch {
+      // Abaikan jika pencatatan kunjungan gagal.
+    }
     if (state.adminPreviewEnabled) {
       setStatus("Mode preview admin aktif.", "ok");
     }
