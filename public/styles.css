@@ -1085,6 +1085,91 @@ body.player-mode #videoPlayer {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.subscribe-promo-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 92;
+  background: rgba(3, 10, 16, 0.66);
+  backdrop-filter: blur(5px);
+}
+
+.subscribe-promo {
+  position: fixed;
+  z-index: 93;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(420px, calc(100vw - 24px));
+  border-radius: 16px;
+  border: 1px solid rgba(255, 160, 100, 0.55);
+  background:
+    radial-gradient(circle at 50% -120%, rgba(255, 162, 108, 0.24), transparent 68%),
+    linear-gradient(160deg, rgba(16, 28, 42, 0.98), rgba(12, 19, 31, 0.99));
+  box-shadow: 0 22px 48px rgba(2, 8, 15, 0.62);
+  padding: 18px 16px 16px;
+  text-align: center;
+}
+
+.subscribe-promo-icon {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 10px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 1.45rem;
+  border: 1px solid rgba(255, 188, 142, 0.52);
+  background: linear-gradient(140deg, rgba(255, 154, 89, 0.24), rgba(255, 115, 67, 0.14));
+  color: #ffe7d4;
+}
+
+.subscribe-promo-title {
+  margin: 0 0 8px;
+  font-size: 1.14rem;
+  color: #fff8ef;
+}
+
+.subscribe-promo-message {
+  margin: 0;
+  color: #f5d4bb;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.subscribe-promo-actions {
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.subscribe-promo-open,
+.subscribe-promo-later {
+  width: 100%;
+  min-height: 40px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.subscribe-promo-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  border: 1px solid rgba(255, 136, 76, 0.55);
+  color: #2e1207;
+  background: linear-gradient(100deg, #ffa964, #ff7a3f);
+  box-shadow: 0 10px 20px rgba(255, 122, 63, 0.28);
+}
+
+.subscribe-promo-later {
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  color: #e1edf7;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+
 .episode-sheet {
   position: fixed;
   left: 50%;
@@ -1489,6 +1574,26 @@ body.player-mode #videoPlayer {
   }
 
   .lock-notice-message {
+    font-size: 0.84rem;
+  }
+
+  .subscribe-promo {
+    width: calc(100vw - 20px);
+    padding: 16px 12px 14px;
+    border-radius: 14px;
+  }
+
+  .subscribe-promo-icon {
+    width: 52px;
+    height: 52px;
+    font-size: 1.22rem;
+  }
+
+  .subscribe-promo-title {
+    font-size: 1.04rem;
+  }
+
+  .subscribe-promo-message {
     font-size: 0.84rem;
   }
 }

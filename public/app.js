@@ -14,6 +14,8 @@ const ADMIN_PREVIEW_TOKEN_KEY = "teleminidrama_admin_preview_token";
 const LIBRARY_REALTIME_POLL_MS = 7000;
 const YOUTUBE_VIEWER_ID_KEY = "top_film_one_viewer_id_v1";
 const YOUTUBE_VERIFY_MESSAGE_TYPE = "top-film-one-youtube-verify";
+const SUBSCRIBE_PROMO_COOLDOWN_KEY = "top_film_one_subscribe_promo_cooldown_until_v1";
+const SUBSCRIBE_PROMO_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const pageParams = new URLSearchParams(window.location.search || "");
 
 function getPageParam(name) {
@@ -152,6 +154,23 @@ function writeWatchProgress(progressByDrama) {
   localStorage.setItem(WATCH_PROGRESS_KEY, JSON.stringify(progressByDrama || {}));
 }
 
+function readSubscribePromoCooldownUntil() {
+  try {
+    const raw = Number(localStorage.getItem(SUBSCRIBE_PROMO_COOLDOWN_KEY) || 0);
+    return Number.isFinite(raw) && raw > 0 ? raw : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeSubscribePromoCooldownUntil(value) {
+  try {
+    localStorage.setItem(SUBSCRIBE_PROMO_COOLDOWN_KEY, String(Math.max(0, Number(value) || 0)));
+  } catch {
+    // Abaikan jika localStorage tidak tersedia.
+  }
+}
+
 const state = {
   dramas: [],
   drama: null,
@@ -242,7 +261,11 @@ const elements = {
   lockNoticeMessage: document.getElementById("lockNoticeMessage"),
   lockNoticeChannelLink: document.getElementById("lockNoticeChannelLink"),
   lockNoticeVerifyBtn: document.getElementById("lockNoticeVerifyBtn"),
-  lockNoticeCloseBtn: document.getElementById("lockNoticeCloseBtn")
+  lockNoticeCloseBtn: document.getElementById("lockNoticeCloseBtn"),
+  subscribePromoBackdrop: document.getElementById("subscribePromoBackdrop"),
+  subscribePromo: document.getElementById("subscribePromo"),
+  subscribePromoOpenBtn: document.getElementById("subscribePromoOpenBtn"),
+  subscribePromoLaterBtn: document.getElementById("subscribePromoLaterBtn")
 };
 
 function setStatus(message, type = "") {
@@ -392,6 +415,45 @@ function showLockNotice({ title, message, requireYoutube = false } = {}) {
   elements.lockNoticeBackdrop.classList.remove("hidden");
 }
 
+function isSubscribePromoVisible() {
+  return Boolean(elements.subscribePromo && !elements.subscribePromo.classList.contains("hidden"));
+}
+
+function hideSubscribePromo({ setCooldown = false } = {}) {
+  if (!elements.subscribePromo || !elements.subscribePromoBackdrop) {
+    return;
+  }
+
+  if (setCooldown) {
+    writeSubscribePromoCooldownUntil(Date.now() + SUBSCRIBE_PROMO_COOLDOWN_MS);
+  }
+
+  elements.subscribePromo.classList.add("hidden");
+  elements.subscribePromoBackdrop.classList.add("hidden");
+}
+
+function maybeShowSubscribePromo() {
+  if (!elements.subscribePromo || !elements.subscribePromoBackdrop || !elements.subscribePromoOpenBtn) {
+    return;
+  }
+
+  if (state.adminPreviewEnabled || state.viewMode !== "home" || state.youtubeGate.enabled) {
+    hideSubscribePromo({ setCooldown: false });
+    return;
+  }
+
+  const cooldownUntil = readSubscribePromoCooldownUntil();
+  if (cooldownUntil > Date.now()) {
+    hideSubscribePromo({ setCooldown: false });
+    return;
+  }
+
+  const channelUrl = String(state.youtubeGate.requiredChannelUrl || "https://www.youtube.com").trim();
+  elements.subscribePromoOpenBtn.href = channelUrl || "https://www.youtube.com";
+  elements.subscribePromo.classList.remove("hidden");
+  elements.subscribePromoBackdrop.classList.remove("hidden");
+}
+
 function renderYoutubeGate() {
   if (!elements.youtubeGateBar || !elements.youtubeVerifyBtn || !elements.youtubeGateText) {
     return;
@@ -402,6 +464,11 @@ function renderYoutubeGate() {
     !state.adminPreviewEnabled &&
     !state.youtubeGate.verified &&
     state.viewMode === "home";
+
+  if (state.youtubeGate.enabled && isSubscribePromoVisible()) {
+    hideSubscribePromo({ setCooldown: false });
+  }
+
   if (!gateEnabled) {
     elements.youtubeGateBar.classList.add("hidden");
     return;
@@ -1393,10 +1460,14 @@ function setViewMode(mode) {
   }
   updateCenterPlayButton();
   renderYoutubeGate();
+  if (!showHome && isSubscribePromoVisible()) {
+    hideSubscribePromo({ setCooldown: false });
+  }
 
   if (showHome) {
     renderHomeGrid();
     setStatus("", "");
+    maybeShowSubscribePromo();
   }
 }
 
@@ -1800,6 +1871,21 @@ function wireEvents() {
   if (elements.lockNoticeVerifyBtn) {
     elements.lockNoticeVerifyBtn.addEventListener("click", async () => {
       await startYoutubeVerification();
+    });
+  }
+  if (elements.subscribePromoBackdrop) {
+    elements.subscribePromoBackdrop.addEventListener("click", () => {
+      hideSubscribePromo({ setCooldown: true });
+    });
+  }
+  if (elements.subscribePromoLaterBtn) {
+    elements.subscribePromoLaterBtn.addEventListener("click", () => {
+      hideSubscribePromo({ setCooldown: true });
+    });
+  }
+  if (elements.subscribePromoOpenBtn) {
+    elements.subscribePromoOpenBtn.addEventListener("click", () => {
+      hideSubscribePromo({ setCooldown: true });
     });
   }
   elements.saveDramaBtn.addEventListener("click", toggleSavedDrama);
