@@ -20,6 +20,7 @@ const countFormatter = new Intl.NumberFormat("id-ID");
 const pageParams = new URLSearchParams(window.location.search || "");
 const AD_VAST_TAG_URL =
   "https://ancientsnow.com/d.mlFpzldhGrN/vtZpGKUb/eeomb9ru/ZeUnlnkFPjTkY/4gNyTYYhwpNSz/Mwt/NkjRg/1sNDjqAq3YNiyaZqsqadWl1ZpxdzD/0-xI";
+const AD_PREROLL_TIMEOUT_MS = 15000;
 
 function getPageParam(name) {
   return String(pageParams.get(name) || "").trim();
@@ -457,12 +458,12 @@ function destroyImaManager() {
 
 async function playVastPreroll({ dramaId, episodeNumber }) {
   if (!elements.videoPlayer || !elements.imaAdContainer) {
-    return;
+    return { played: false, reason: "no-container" };
   }
 
   await loadImaSdk().catch(() => {});
   if (typeof google?.ima !== "object") {
-    return;
+    return { played: false, reason: "ima-unavailable" };
   }
 
   if (!imaAdDisplayContainer) {
@@ -473,31 +474,50 @@ async function playVastPreroll({ dramaId, episodeNumber }) {
   imaAdsLoader = new google.ima.AdsLoader(imaAdDisplayContainer);
 
   return new Promise((resolve) => {
+    let done = false;
+    const finish = (result) => {
+      if (done) {
+        return;
+      }
+      done = true;
+      resolve(result);
+    };
+
     const cleanup = () => {
       destroyImaManager();
       elements.imaAdContainer.classList.add("hidden");
       imaAdsLoader?.destroy?.();
       imaAdsLoader = null;
-      resolve();
     };
 
     imaAdsLoader.addEventListener(google.ima.AdsManagerLoadedEvent.Type.ADS_MANAGER_LOADED, (event) => {
       try {
         imaAdsManager = event.getAdsManager(elements.videoPlayer);
-        imaAdsManager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, cleanup);
-        imaAdsManager.addEventListener(google.ima.AdEvent.Type.ALL_ADS_COMPLETED, cleanup);
-        imaAdsManager.addEventListener(google.ima.AdEvent.Type.COMPLETE, cleanup);
+        imaAdsManager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, () => {
+          cleanup();
+          finish({ played: false, reason: "ad-error" });
+        });
+        imaAdsManager.addEventListener(google.ima.AdEvent.Type.ALL_ADS_COMPLETED, () => {
+          cleanup();
+          finish({ played: true });
+        });
+        imaAdsManager.addEventListener(google.ima.AdEvent.Type.COMPLETE, () => {
+          cleanup();
+          finish({ played: true });
+        });
 
         elements.imaAdContainer.classList.remove("hidden");
         imaAdsManager.init(elements.videoPlayer.clientWidth, elements.videoPlayer.clientHeight, google.ima.ViewMode.NORMAL);
         imaAdsManager.start();
       } catch {
         cleanup();
+        finish({ played: false, reason: "start-failed" });
       }
     });
 
     imaAdsLoader.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, () => {
       cleanup();
+      finish({ played: false, reason: "ad-error" });
     });
 
     const adsRequest = new google.ima.AdsRequest();
@@ -510,24 +530,27 @@ async function playVastPreroll({ dramaId, episodeNumber }) {
       imaAdsLoader.requestAds(adsRequest);
     } catch {
       cleanup();
+      finish({ played: false, reason: "request-failed" });
     }
+
+    setTimeout(() => {
+      cleanup();
+      finish({ played: false, reason: "timeout" });
+    }, AD_PREROLL_TIMEOUT_MS);
   });
 }
 
 async function maybePlayPreroll(episode) {
-  if (!episode || Number(episode.number) !== 1) {
-    return;
+  if (!episode || !parseBooleanFlag(episode?.adRequired)) {
+    return true;
   }
   const key = `drama:${state.drama?.id || ""}-ep:${episode.number}`;
   if (adPrerollPlayed.has(key)) {
-    return;
+    return true;
   }
   adPrerollPlayed.add(key);
-  const timeoutMs = 3500;
-  const timeoutPromise = new Promise((resolve) => {
-    setTimeout(resolve, timeoutMs);
-  });
-  await Promise.race([playVastPreroll({ dramaId: state.drama?.id, episodeNumber: episode.number }), timeoutPromise]);
+  const result = await playVastPreroll({ dramaId: state.drama?.id, episodeNumber: episode.number });
+  return Boolean(result?.played);
 }
 
 function sanitizeCountValue(value) {
@@ -1654,6 +1677,12 @@ function renderEpisodeSheet() {
     clickMeta.textContent = `${formatCount(getEpisodeClickCount(state.drama?.id, episode.number))} klik`;
 
     button.append(label, clickMeta);
+    if (parseBooleanFlag(episode?.adRequired)) {
+      const adBadge = document.createElement("span");
+      adBadge.className = "episode-chip-ad";
+      adBadge.textContent = "Iklan";
+      button.appendChild(adBadge);
+    }
     if (isLocked) {
       button.title = lockState.manual
         ? `Episode ${episode.number} dikunci admin.`
@@ -2056,7 +2085,12 @@ async function openEpisode(episodeNumber, { resumeSeconds = null, trackEpisodeCl
     syncPlaybackControls();
     updateCenterPlayButton();
 
-    await maybePlayPreroll(episode);
+    const adOk = await maybePlayPreroll(episode);
+    if (!adOk) {
+      setStatus("Iklan gagal dimuat. Coba lagi sebentar.", "error");
+      setPlayerHint("Iklan gagal dimuat. Coba ulang untuk memutar episode.");
+      return;
+    }
 
     try {
       await elements.videoPlayer.play();

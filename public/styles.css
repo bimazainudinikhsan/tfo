@@ -1298,6 +1298,19 @@ body.player-mode #videoPlayer {
   font-weight: 600;
 }
 
+.episode-chip-ad {
+  margin-top: 2px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 138, 61, 0.2);
+  border: 1px solid rgba(255, 138, 61, 0.35);
+  color: #ffd5b7;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
 .episode-chip.active {
   background: linear-gradient(92deg, #d9006d, #a30083);
 }

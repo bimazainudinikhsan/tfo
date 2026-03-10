@@ -16,6 +16,10 @@
   box-sizing: border-box;
 }
 
+.hidden {
+  display: none !important;
+}
+
 body {
   margin: 0;
   font-family: "Sora", "Segoe UI", sans-serif;
@@ -337,6 +341,20 @@ hr {
 .btn-inline.unlock {
   background: #1f6f5a;
   color: #d4fff1;
+}
+
+.btn-inline.ad {
+  min-width: 96px;
+}
+
+.btn-inline.ad.on {
+  background: #1f6f5a;
+  color: #d4fff1;
+}
+
+.btn-inline.ad.off {
+  background: #9f6a2a;
+  color: #fff0d2;
 }
 
 .log-box {

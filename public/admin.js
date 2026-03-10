@@ -49,7 +49,8 @@ const elements = {
   syncGdriveBtn: document.getElementById("syncGdriveBtn"),
   episodeSummaryMeta: document.getElementById("episodeSummaryMeta"),
   episodeTableBody: document.getElementById("episodeTableBody"),
-  logBox: document.getElementById("logBox")
+  logBox: document.getElementById("logBox"),
+  adminContent: document.getElementById("adminContent")
 };
 
 elements.adminToken.value = state.adminToken;
@@ -77,6 +78,14 @@ function log(message, payload = null, { append = false } = {}) {
 
 function appendLog(message, payload = null) {
   log(message, payload, { append: true });
+}
+
+function setAdminAccess(allowed) {
+  if (!elements.adminContent) {
+    return;
+  }
+
+  elements.adminContent.classList.toggle("hidden", !allowed);
 }
 
 function formatFileSize(bytes) {
@@ -741,6 +750,17 @@ function renderEpisodeSummary() {
     statusBadge.textContent = locked ? "Dikunci" : hasVideo ? "Siap putar" : "Belum ada video";
     statusCell.appendChild(statusBadge);
 
+    const adCell = document.createElement("td");
+    const adRequired = parseBooleanFlag(episode?.adRequired);
+    const adButton = document.createElement("button");
+    adButton.type = "button";
+    adButton.className = `btn-inline ad ${adRequired ? "on" : "off"}`;
+    adButton.dataset.action = "toggle-ad-episode";
+    adButton.dataset.episodeNumber = String(episode.number);
+    adButton.dataset.adRequired = adRequired ? "1" : "0";
+    adButton.textContent = adRequired ? "Iklan ON" : "Iklan OFF";
+    adCell.appendChild(adButton);
+
     const actionCell = document.createElement("td");
     actionCell.className = "actions";
     const lockButton = document.createElement("button");
@@ -761,7 +781,7 @@ function renderEpisodeSummary() {
     deleteButton.textContent = "Hapus";
     actionCell.appendChild(deleteButton);
 
-    row.append(numberCell, titleCell, sourceCell, statusCell, actionCell);
+    row.append(numberCell, titleCell, sourceCell, statusCell, adCell, actionCell);
     elements.episodeTableBody.appendChild(row);
   }
 }
@@ -845,6 +865,25 @@ function requireTokenOrThrow() {
   }
 }
 
+async function validateAdminAccess() {
+  if (!state.adminToken) {
+    setAdminAccess(false);
+    return false;
+  }
+
+  try {
+    await refreshLibrary({ silent: true });
+    setFormDirty(false);
+    setAdminAccess(true);
+    startRealtimePolling();
+    return true;
+  } catch (error) {
+    setAdminAccess(false);
+    stopRealtimePolling();
+    throw error;
+  }
+}
+
 function buildDramaPayload({ publishNow = false } = {}) {
   const idInput = elements.dramaId.value.trim();
   const title = elements.dramaTitle.value.trim();
@@ -892,23 +931,24 @@ async function saveDramaMetadata({ publishNow = false } = {}) {
 elements.saveTokenBtn.addEventListener("click", () => {
   state.adminToken = elements.adminToken.value.trim();
   localStorage.setItem(STORAGE_KEY, state.adminToken);
-  if (state.adminToken) {
-    startRealtimePolling();
-  } else {
-    stopRealtimePolling();
-  }
-  log("Token admin disimpan. Klik Reload untuk cek akses.");
+  validateAdminAccess()
+    .then((ok) => {
+      if (ok) {
+        log("Token admin valid. Dashboard dibuka.", {
+          totalDrama: state.library.dramas.length
+        });
+      }
+    })
+    .catch((error) => {
+      log("Token admin tidak valid.", error.message);
+    });
 });
 
 elements.reloadBtn.addEventListener("click", async () => {
   try {
     requireTokenOrThrow();
-    await refreshLibrary({ silent: true });
-    setFormDirty(false);
-    log("Library berhasil dimuat.", {
-      totalDrama: state.library.dramas.length
-    });
-    startRealtimePolling();
+    await validateAdminAccess();
+    log("Library berhasil dimuat.", { totalDrama: state.library.dramas.length });
   } catch (error) {
     log("Gagal reload library.", error.message);
   }
@@ -1059,8 +1099,31 @@ elements.episodeTableBody.addEventListener("click", async (event) => {
       throw new Error("Nomor episode tidak valid.");
     }
 
-    const action = String(button.dataset.action || "").trim();
-    if (action === "toggle-lock-episode") {
+  const action = String(button.dataset.action || "").trim();
+  if (action === "toggle-ad-episode") {
+    const currentAd = parseBooleanFlag(button.dataset.adRequired);
+    const nextAd = !currentAd;
+    const payload = await api(
+      `/api/admin/dramas/${encodeURIComponent(drama.id)}/episodes/${encodeURIComponent(
+        episodeNumber
+      )}/ads`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          adRequired: nextAd
+        })
+      }
+    );
+
+    await refreshLibrary();
+    log(`Iklan episode ${episodeNumber} berhasil diperbarui.`, payload);
+    return;
+  }
+
+  if (action === "toggle-lock-episode") {
       const currentLocked = parseBooleanFlag(button.dataset.locked);
       const shouldLock = !currentLocked;
       let lockReason = "";
@@ -1270,18 +1333,17 @@ elements.syncGdriveBtn.addEventListener("click", async () => {
 });
 
 async function init() {
+  setAdminAccess(false);
   if (!state.adminToken) {
-    log("Isi token admin, lalu klik Reload.");
+    log("Isi token admin, lalu klik Simpan Token.");
     return;
   }
 
   try {
-    await refreshLibrary({ silent: true });
-    setFormDirty(false);
+    await validateAdminAccess();
     log("Library berhasil dimuat.", {
       totalDrama: state.library.dramas.length
     });
-    startRealtimePolling();
   } catch (error) {
     log("Gagal memuat data admin.", error.message);
   }

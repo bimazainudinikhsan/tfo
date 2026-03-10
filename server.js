@@ -554,6 +554,7 @@ function sanitizeLibrary(library) {
         title: episode.title,
         source: normalizeEpisodeSource(episode),
         hasVideo: hasEpisodeVideo(episode),
+        adRequired: Boolean(episode.adRequired),
         locked: isEpisodeManuallyLocked(episode),
         lockReason: getEpisodeManualLockReason(episode)
       }))
@@ -3906,6 +3907,56 @@ app.post("/api/admin/dramas/:dramaId/episodes/:episodeNumber/lock", requireAdmin
   } catch (error) {
     return res.status(500).json({
       message: "Gagal memperbarui lock episode.",
+      detail: error.message
+    });
+  }
+});
+
+app.post("/api/admin/dramas/:dramaId/episodes/:episodeNumber/ads", requireAdmin, async (req, res) => {
+  try {
+    const dramaId = String(req.params.dramaId || "").trim();
+    const episodeNumber = Number(req.params.episodeNumber);
+    if (!dramaId) {
+      return res.status(400).json({ message: "dramaId wajib diisi." });
+    }
+
+    if (!Number.isInteger(episodeNumber) || episodeNumber <= 0) {
+      return res.status(400).json({ message: "episodeNumber harus angka positif." });
+    }
+
+    const library = await readLibrary();
+    const drama = findDrama(library, dramaId);
+    if (!drama) {
+      return res.status(404).json({ message: "Drama tidak ditemukan." });
+    }
+
+    const episode = findEpisode(drama, episodeNumber);
+    if (!episode) {
+      return res.status(404).json({ message: "Episode tidak ditemukan." });
+    }
+
+    const hasValue = Object.prototype.hasOwnProperty.call(req.body || {}, "adRequired");
+    const nextValue = hasValue
+      ? parseBoolean(req.body?.adRequired, false)
+      : !Boolean(episode.adRequired);
+
+    episode.adRequired = Boolean(nextValue);
+    episode.updatedAt = new Date().toISOString();
+
+    sortEpisodesInPlace(drama);
+    touchDramaTimestamps(drama);
+    await writeLibrary(library);
+
+    return res.json({
+      message: episode.adRequired ? "Iklan episode diaktifkan." : "Iklan episode dinonaktifkan.",
+      dramaId,
+      episodeNumber,
+      adRequired: Boolean(episode.adRequired),
+      episode
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Gagal memperbarui iklan episode.",
       detail: error.message
     });
   }
