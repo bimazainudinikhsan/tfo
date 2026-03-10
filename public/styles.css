@@ -1243,6 +1243,58 @@ body.player-mode #videoPlayer {
   border-left: 22px solid #fff;
 }
 
+.center-pause-btn {
+  position: absolute;
+  z-index: 9;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 76px;
+  height: 76px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(0, 0, 0, 0.48);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.center-pause-btn:hover {
+  transform: translate(-50%, -50%) scale(1.05);
+}
+
+.center-pause-btn:active {
+  transform: translate(-50%, -50%) scale(0.97);
+}
+
+.center-pause-icon {
+  position: relative;
+  width: 18px;
+  height: 22px;
+}
+
+.center-pause-icon::before,
+.center-pause-icon::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 6px;
+  height: 100%;
+  border-radius: 2px;
+  background: #fff;
+}
+
+.center-pause-icon::before {
+  left: 0;
+}
+
+.center-pause-icon::after {
+  right: 0;
+}
+
 .player-loader {
   position: absolute;
   z-index: 11;
@@ -1881,6 +1933,11 @@ body.player-mode #videoPlayer {
     height: 68px;
   }
 
+  .center-pause-btn {
+    width: 62px;
+    height: 62px;
+  }
+
   .player-loader {
     min-width: 156px;
     gap: 8px;
@@ -1901,6 +1958,11 @@ body.player-mode #videoPlayer {
     border-top-width: 11px;
     border-bottom-width: 11px;
     border-left-width: 18px;
+  }
+
+  .center-pause-icon {
+    width: 16px;
+    height: 20px;
   }
 
   .player-hint {

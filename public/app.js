@@ -331,6 +331,7 @@ const elements = {
   playerEpisodeBadge: document.getElementById("playerEpisodeBadge"),
   videoPlayer: document.getElementById("videoPlayer"),
   centerPlayBtn: document.getElementById("centerPlayBtn"),
+  centerPauseBtn: document.getElementById("centerPauseBtn"),
   playerLoader: document.getElementById("playerLoader"),
   playerLoaderText: document.getElementById("playerLoaderText"),
   playerControls: document.getElementById("playerControls"),
@@ -2721,6 +2722,11 @@ function updateCenterPlayButton() {
   const hasSource = Boolean(elements.videoPlayer.getAttribute("src"));
   const canShow = state.viewMode === "player" && !elements.detailLayout.classList.contains("is-playing");
   elements.centerPlayBtn.classList.toggle("hidden", !(hasSource && canShow));
+  const isPlaying = !elements.videoPlayer.paused && !elements.videoPlayer.ended;
+  const showPause = state.viewMode === "player" && hasSource && isPlaying && state.playerControlsVisible;
+  if (elements.centerPauseBtn) {
+    elements.centerPauseBtn.classList.toggle("hidden", !showPause);
+  }
   updatePlaybackControlsVisibility();
   updatePlayPauseButton();
 }
@@ -2728,6 +2734,7 @@ function updateCenterPlayButton() {
 function showPlayerControls({ autoHide = true } = {}) {
   state.playerControlsVisible = true;
   updatePlaybackControlsVisibility();
+  updateCenterPlayButton();
   if (state.playerControlsHideTimer) {
     clearTimeout(state.playerControlsHideTimer);
     state.playerControlsHideTimer = null;
@@ -2746,6 +2753,7 @@ function hidePlayerControls() {
     state.playerControlsHideTimer = null;
   }
   state.playerControlsVisible = false;
+  updateCenterPlayButton();
   updatePlaybackControlsVisibility();
 }
 
@@ -3382,6 +3390,11 @@ function wireEvents() {
       // Abaikan jika browser masih menolak autoplay.
     }
   });
+  if (elements.centerPauseBtn) {
+    elements.centerPauseBtn.addEventListener("click", () => {
+      elements.videoPlayer.pause();
+    });
+  }
   elements.playPauseBtn.addEventListener("click", async () => {
     if (elements.videoPlayer.paused) {
       try {
