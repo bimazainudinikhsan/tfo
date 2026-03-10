@@ -330,6 +330,8 @@ let imaAdsLoader = null;
 let imaAdsManager = null;
 let imaAdDisplayContainer = null;
 let imaSdkLoaded = false;
+let imaAdDisplayInitialized = false;
+let imaSettingsConfigured = false;
 
 function isValidGa4MeasurementId(value) {
   return /^G-[A-Z0-9]{5,}$/i.test(String(value || "").trim());
@@ -414,6 +416,7 @@ function sendGaEvent(eventName, params = {}) {
 function loadImaSdk() {
   if (imaSdkLoaded || typeof window.google?.ima === "object") {
     imaSdkLoaded = true;
+    configureImaSdkSettings();
     return Promise.resolve();
   }
 
@@ -441,11 +444,55 @@ function loadImaSdk() {
     script.addEventListener("load", () => {
       script.dataset.loaded = "1";
       imaSdkLoaded = true;
+      configureImaSdkSettings();
       resolve();
     });
     script.addEventListener("error", () => reject(new Error("Gagal memuat IMA SDK")));
     document.head.appendChild(script);
   });
+}
+
+function configureImaSdkSettings() {
+  if (imaSettingsConfigured || typeof window.google?.ima?.settings !== "object") {
+    return;
+  }
+  try {
+    if (google.ima?.ImaSdkSettings?.VpaidMode?.DISABLED) {
+      google.ima.settings.setVpaidMode(google.ima.ImaSdkSettings.VpaidMode.DISABLED);
+    }
+    if (typeof google.ima.settings.setDisableCustomPlaybackForIOS10Plus === "function") {
+      google.ima.settings.setDisableCustomPlaybackForIOS10Plus(true);
+    }
+    if (typeof google.ima.settings.setLocale === "function") {
+      google.ima.settings.setLocale("id");
+    }
+    imaSettingsConfigured = true;
+  } catch {
+    // Abaikan error konfigurasi.
+  }
+}
+
+function primeImaAdDisplayContainer() {
+  if (imaAdDisplayInitialized) {
+    return true;
+  }
+  if (!elements.videoPlayer || !elements.imaAdContainer) {
+    return false;
+  }
+  if (typeof window.google?.ima !== "object") {
+    return false;
+  }
+
+  try {
+    if (!imaAdDisplayContainer) {
+      imaAdDisplayContainer = new google.ima.AdDisplayContainer(elements.imaAdContainer, elements.videoPlayer);
+    }
+    imaAdDisplayContainer.initialize();
+    imaAdDisplayInitialized = true;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function destroyImaManager() {
@@ -470,7 +517,14 @@ async function playVastPreroll({ dramaId, episodeNumber }) {
   if (!imaAdDisplayContainer) {
     imaAdDisplayContainer = new google.ima.AdDisplayContainer(elements.imaAdContainer, elements.videoPlayer);
   }
-  imaAdDisplayContainer.initialize();
+  if (!imaAdDisplayInitialized) {
+    try {
+      imaAdDisplayContainer.initialize();
+      imaAdDisplayInitialized = true;
+    } catch {
+      // Abaikan error agar fallback tetap jalan.
+    }
+  }
 
   imaAdsLoader = new google.ima.AdsLoader(imaAdDisplayContainer);
 
@@ -536,10 +590,18 @@ async function playVastPreroll({ dramaId, episodeNumber }) {
         });
         imaAdsManager.addEventListener(google.ima.AdEvent.Type.STARTED, () => {
           startPlaybackTimeout();
+          try {
+            imaAdsManager.setVolume(1);
+          } catch {
+            // Abaikan jika volume tidak bisa diubah.
+          }
         });
 
         elements.imaAdContainer.classList.remove("hidden");
-        imaAdsManager.init(elements.videoPlayer.clientWidth, elements.videoPlayer.clientHeight, google.ima.ViewMode.NORMAL);
+        const rect = elements.videoPlayer.getBoundingClientRect();
+        const width = Math.max(1, Math.floor(rect.width || elements.videoPlayer.clientWidth || 0));
+        const height = Math.max(1, Math.floor(rect.height || elements.videoPlayer.clientHeight || 0));
+        imaAdsManager.init(width, height, google.ima.ViewMode.NORMAL);
         imaAdsManager.start();
       } catch {
         cleanup();
@@ -559,10 +621,19 @@ async function playVastPreroll({ dramaId, episodeNumber }) {
 
     const adsRequest = new google.ima.AdsRequest();
     adsRequest.adTagUrl = AD_VAST_TAG_URL;
-    adsRequest.linearAdSlotWidth = elements.videoPlayer.clientWidth;
-    adsRequest.linearAdSlotHeight = elements.videoPlayer.clientHeight;
-    adsRequest.nonLinearAdSlotWidth = elements.videoPlayer.clientWidth;
-    adsRequest.nonLinearAdSlotHeight = Math.floor(elements.videoPlayer.clientHeight / 3);
+    const rect = elements.videoPlayer.getBoundingClientRect();
+    const width = Math.max(1, Math.floor(rect.width || elements.videoPlayer.clientWidth || 0));
+    const height = Math.max(1, Math.floor(rect.height || elements.videoPlayer.clientHeight || 0));
+    adsRequest.linearAdSlotWidth = width;
+    adsRequest.linearAdSlotHeight = height;
+    adsRequest.nonLinearAdSlotWidth = width;
+    adsRequest.nonLinearAdSlotHeight = Math.floor(height / 3);
+    if (typeof adsRequest.setAdWillAutoPlay === "function") {
+      adsRequest.setAdWillAutoPlay(true);
+    }
+    if (typeof adsRequest.setAdWillPlayMuted === "function") {
+      adsRequest.setAdWillPlayMuted(true);
+    }
     try {
       imaAdsLoader.requestAds(adsRequest);
     } catch {
@@ -1206,6 +1277,13 @@ function getSortedEpisodes(drama) {
 
 function getDramaById(dramaId) {
   return state.dramas.find((drama) => drama.id === dramaId) || null;
+}
+
+function buildDramaShareUrl(dramaId) {
+  const baseUrl = `${window.location.origin}${window.location.pathname}`;
+  const url = new URL(baseUrl);
+  url.searchParams.set("dramaId", String(dramaId || "").trim());
+  return url.toString();
 }
 
 function parseTimestamp(value) {
@@ -2068,6 +2146,9 @@ async function openEpisode(episodeNumber, { resumeSeconds = null, trackEpisodeCl
     return;
   }
 
+  // iOS Safari butuh inisialisasi IMA dari gesture user.
+  primeImaAdDisplayContainer();
+
   if (trackEpisodeClick) {
     trackEpisodeClickMetric(state.drama?.id, episode.number);
     sendGaEvent("episode_select", {
@@ -2312,20 +2393,23 @@ async function shareCurrentDrama() {
     return;
   }
 
+  const shareUrl = buildDramaShareUrl(state.drama.id);
   const shareText = `Nonton ${state.drama.title} di TeleMiniDrama`;
+  const shareMessage = `${shareText}\n${shareUrl}`;
   try {
     if (navigator.share) {
       await navigator.share({
         title: state.drama.title,
-        text: shareText
+        text: shareText,
+        url: shareUrl
       });
       setStatus("Berhasil membuka menu bagikan.", "ok");
       return;
     }
 
     if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(shareText);
-      setStatus("Teks share disalin ke clipboard.", "ok");
+      await navigator.clipboard.writeText(shareMessage);
+      setStatus("Link drama disalin ke clipboard.", "ok");
       return;
     }
 
