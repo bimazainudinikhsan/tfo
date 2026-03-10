@@ -1687,6 +1687,37 @@ async function editCommentOnDrama(dramaId, commentId, message, editorViewerId, {
   return nextList;
 }
 
+async function deleteCommentOnDrama(dramaId, commentId, editorViewerId, { admin = false } = {}) {
+  const safeDramaId = normalizeAnalyticsKey(dramaId);
+  if (!safeDramaId) {
+    throw new Error("dramaId tidak valid.");
+  }
+
+  const safeCommentId = String(commentId || "").trim();
+  if (!safeCommentId) {
+    throw new Error("commentId tidak valid.");
+  }
+
+  const store = await readCommentsStore();
+  const current = Array.isArray(store[safeDramaId]) ? store[safeDramaId] : [];
+  const target = findCommentById(current, safeCommentId);
+  if (!target) {
+    throw new Error("Komentar tidak ditemukan.");
+  }
+
+  const safeViewerId = normalizeViewerId(editorViewerId);
+  if (!admin) {
+    if (!safeViewerId || safeViewerId !== normalizeViewerId(target.viewerId)) {
+      throw new Error("Tidak diizinkan menghapus komentar ini.");
+    }
+  }
+
+  const nextList = normalizeCommentList(current.filter((item) => String(item?.id || "") !== safeCommentId));
+  store[safeDramaId] = nextList;
+  await writeCommentsStore(store);
+  return nextList;
+}
+
 async function readAnalyticsStore() {
   if (shouldUseFirebaseRealtimeDb()) {
     const remoteValue = await readJsonFromFirebasePath(FIREBASE_ANALYTICS_PATH, null);
@@ -3247,6 +3278,40 @@ app.put("/api/comments/:dramaId/:commentId", async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       message: "Gagal mengedit komentar.",
+      detail: error.message
+    });
+  }
+});
+
+app.delete("/api/comments/:dramaId/:commentId", async (req, res) => {
+  try {
+    const dramaId = normalizeAnalyticsKey(req.params.dramaId || req.body?.dramaId || req.query?.dramaId);
+    if (!dramaId) {
+      return res.status(400).json({
+        message: "dramaId wajib diisi."
+      });
+    }
+
+    const commentId = String(req.params.commentId || req.body?.commentId || req.query?.commentId || "").trim();
+    if (!commentId) {
+      return res.status(400).json({
+        message: "commentId wajib diisi."
+      });
+    }
+
+    const viewerId = getViewerIdFromRequest(req);
+    const isAdmin = isAdminAuthorizedRequest(req);
+    const comments = await deleteCommentOnDrama(dramaId, commentId, viewerId, { admin: isAdmin });
+
+    return res.json({
+      message: "Komentar dihapus.",
+      dramaId,
+      commentId,
+      comments
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Gagal menghapus komentar.",
       detail: error.message
     });
   }

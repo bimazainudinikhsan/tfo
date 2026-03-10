@@ -1115,8 +1115,11 @@ function renderCommentList(comments, container) {
     });
     actions.appendChild(replyBtn);
 
-    const canEdit = String(comment?.viewerId || "") === String(state.viewerId || "") || state.adminPreviewEnabled;
-    if (canEdit) {
+    const canManage =
+      String(comment?.viewerId || "") === String(state.viewerId || "") ||
+      state.adminPreviewEnabled ||
+      Boolean(readAdminTokenFromStorage());
+    if (canManage) {
       const editBtn = document.createElement("button");
       editBtn.type = "button";
       editBtn.className = "comment-action-btn";
@@ -1133,6 +1136,23 @@ function renderCommentList(comments, container) {
         }
       });
       actions.appendChild(editBtn);
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "comment-action-btn delete";
+      deleteBtn.textContent = "Hapus";
+      deleteBtn.addEventListener("click", async () => {
+        const confirmed = window.confirm("Hapus komentar ini?");
+        if (!confirmed) {
+          return;
+        }
+        try {
+          await deleteCommentForDrama(comment?.id);
+        } catch (error) {
+          setStatus(error.message, "error");
+        }
+      });
+      actions.appendChild(deleteBtn);
     }
 
     body.append(actions);
@@ -1351,6 +1371,31 @@ async function editCommentForDrama(commentId, message) {
 
   if (payload.moderated) {
     setStatus("Komentar disaring demi kenyamanan bersama.", "ok");
+  }
+
+  clearCommentComposer();
+  if (payload.comments) {
+    applyComments(dramaId, payload.comments);
+  }
+}
+
+async function deleteCommentForDrama(commentId) {
+  const dramaId = String(state.drama?.id || "").trim();
+  const safeCommentId = String(commentId || "").trim();
+  if (!dramaId || !safeCommentId) {
+    return;
+  }
+
+  const response = await fetch(
+    `/api/comments/${encodeURIComponent(dramaId)}/${encodeURIComponent(safeCommentId)}`,
+    {
+      method: "DELETE",
+      headers: buildCommentRequestHeaders()
+    }
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.message || "Gagal menghapus komentar.");
   }
 
   clearCommentComposer();
