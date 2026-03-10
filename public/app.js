@@ -1291,6 +1291,29 @@ function buildDramaShareUrl(dramaId) {
   return url.toString();
 }
 
+function updateShareableUrl() {
+  if (typeof window === "undefined" || !window.location) {
+    return;
+  }
+
+  try {
+    const url = new URL(window.location.href);
+    if (state.viewMode === "preview" || state.viewMode === "player") {
+      if (state.drama?.id) {
+        url.searchParams.set("dramaId", String(state.drama.id));
+      }
+    } else {
+      url.searchParams.delete("dramaId");
+    }
+    url.searchParams.delete("adminToken");
+    if (url.toString() !== window.location.href) {
+      window.history.replaceState({}, "", url.toString());
+    }
+  } catch {
+    // Abaikan jika URL tidak bisa diproses.
+  }
+}
+
 function parseTimestamp(value) {
   const time = Date.parse(String(value || ""));
   return Number.isFinite(time) ? time : 0;
@@ -2103,6 +2126,8 @@ function setViewMode(mode) {
     setStatus("", "");
     maybeShowSubscribePromo();
   }
+
+  updateShareableUrl();
 }
 
 function clearVideo() {
@@ -2313,6 +2338,7 @@ async function setDramaById(dramaId, { openFirstEpisode = false, trackDramaClick
   updatePlayerHeader();
   renderEpisodeSheet();
   updateSaveButton();
+  updateShareableUrl();
 
   if (firstEpisode && openFirstEpisode) {
     await openEpisode(resumeTarget.episode.number, {
