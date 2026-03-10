@@ -1995,8 +1995,6 @@ async function openEpisode(episodeNumber, { resumeSeconds = null, trackEpisodeCl
     return;
   }
 
-  await maybePlayPreroll(episode);
-
   if (trackEpisodeClick) {
     trackEpisodeClickMetric(state.drama?.id, episode.number);
     sendGaEvent("episode_select", {
@@ -2053,6 +2051,8 @@ async function openEpisode(episodeNumber, { resumeSeconds = null, trackEpisodeCl
     setStatus("Video siap diputar.", "ok");
     syncPlaybackControls();
     updateCenterPlayButton();
+
+    await maybePlayPreroll(episode);
 
     try {
       await elements.videoPlayer.play();
