@@ -1267,6 +1267,11 @@ async function startYoutubeVerification() {
 }
 
 function getStartParamDramaId() {
+  const queryValue = String(pageParams.get("dramaId") || "").trim();
+  if (queryValue) {
+    return queryValue;
+  }
+
   const value = String(telegram?.initDataUnsafe?.start_param || "").trim();
   return value || null;
 }
