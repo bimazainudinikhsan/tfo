@@ -2,7 +2,7 @@ import path from "path";
 import { createReadStream } from "fs";
 import { fileURLToPath } from "url";
 import { mkdir, readFile, unlink, writeFile } from "fs/promises";
-import { createHash, createSign, randomUUID } from "crypto";
+import { createHash, createHmac, createSign, randomUUID, timingSafeEqual } from "crypto";
 import dotenv from "dotenv";
 import express from "express";
 import multer from "multer";
@@ -105,6 +105,7 @@ const parsedStreamTokenMaxUses = Number(process.env.STREAM_TOKEN_MAX_USES || 800
 const STREAM_TOKEN_MAX_USES =
   Number.isFinite(parsedStreamTokenMaxUses) && parsedStreamTokenMaxUses > 0 ? parsedStreamTokenMaxUses : 800;
 const STREAM_TOKEN_REQUIRE_SAME_UA = parseBoolean(process.env.STREAM_TOKEN_REQUIRE_SAME_UA || "true", true);
+const STREAM_TOKEN_SECRET = String(process.env.STREAM_TOKEN_SECRET || "").trim();
 const STREAM_SESSION_COOKIE_NAME = "stream_sid";
 const parsedStreamSessionTtlSec = Number(process.env.STREAM_SESSION_TTL_SECONDS || 86400);
 const STREAM_SESSION_TTL_SECONDS =
@@ -172,6 +173,22 @@ const streamTokenStore = new Map();
 const youtubeOauthStateStore = new Map();
 const FIREBASE_APP_NAME = "teleminidrama-rtdb";
 let firebaseRealtimeDb = null;
+
+function resolveStreamTokenSecret() {
+  if (STREAM_TOKEN_SECRET) {
+    return STREAM_TOKEN_SECRET;
+  }
+  if (ADMIN_TOKEN && ADMIN_TOKEN !== "ganti_dengan_token_admin_rahasia") {
+    return ADMIN_TOKEN;
+  }
+  if (BOT_TOKEN) {
+    return BOT_TOKEN;
+  }
+  return "";
+}
+
+const STREAM_TOKEN_SIGNING_SECRET = resolveStreamTokenSecret();
+const USE_STATELESS_STREAM_TOKENS = Boolean(STREAM_TOKEN_SIGNING_SECRET);
 
 const upload = multer({
   dest: TMP_UPLOAD_DIR,
@@ -845,6 +862,10 @@ function isLikelyApiFetchRequest(req) {
 }
 
 function cleanupExpiredStreamTokens() {
+  if (USE_STATELESS_STREAM_TOKENS) {
+    return;
+  }
+
   const now = Date.now();
   for (const [token, payload] of streamTokenStore.entries()) {
     if (!payload || Number(payload.expiresAt) <= now) {
@@ -853,7 +874,61 @@ function cleanupExpiredStreamTokens() {
   }
 }
 
+function base64UrlEncode(input) {
+  return Buffer.from(input)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function base64UrlDecode(input) {
+  const normalized = String(input || "").replace(/-/g, "+").replace(/_/g, "/");
+  const padLength = normalized.length % 4;
+  const padded = padLength ? `${normalized}${"=".repeat(4 - padLength)}` : normalized;
+  return Buffer.from(padded, "base64").toString("utf-8");
+}
+
+function safeEqualToken(a, b) {
+  if (!a || !b || a.length !== b.length) {
+    return false;
+  }
+
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+function signStreamToken(payload, secret) {
+  const data = base64UrlEncode(JSON.stringify(payload));
+  const signature = base64UrlEncode(createHmac("sha256", secret).update(data).digest());
+  return `${data}.${signature}`;
+}
+
+function verifyStreamToken(token, secret) {
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length !== 2) {
+      return null;
+    }
+
+    const [data, signature] = parts;
+    const expected = base64UrlEncode(createHmac("sha256", secret).update(data).digest());
+    if (!safeEqualToken(signature, expected)) {
+      return null;
+    }
+
+    const payload = JSON.parse(base64UrlDecode(data));
+    return payload && typeof payload === "object" ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
 function createStreamToken(payload) {
+  if (USE_STATELESS_STREAM_TOKENS) {
+    const expiresAt = Date.now() + STREAM_TOKEN_TTL_MS;
+    return signStreamToken({ ...payload, exp: expiresAt }, STREAM_TOKEN_SIGNING_SECRET);
+  }
+
   cleanupExpiredStreamTokens();
   const token = randomUUID().replace(/-/g, "");
   streamTokenStore.set(token, {
@@ -865,6 +940,23 @@ function createStreamToken(payload) {
 }
 
 function getActiveStreamToken(token, { consume = false } = {}) {
+  if (USE_STATELESS_STREAM_TOKENS) {
+    const payload = verifyStreamToken(token, STREAM_TOKEN_SIGNING_SECRET);
+    if (!payload) {
+      return null;
+    }
+
+    if (Number(payload.exp) <= Date.now()) {
+      return null;
+    }
+
+    return {
+      ...payload,
+      expiresAt: Number(payload.exp),
+      usesLeft: STREAM_TOKEN_MAX_USES
+    };
+  }
+
   cleanupExpiredStreamTokens();
   const payload = streamTokenStore.get(token);
   if (!payload) {
@@ -4346,6 +4438,9 @@ async function startServer() {
 
   app.listen(PORT, () => {
     console.log(`TeleMiniDrama aktif di http://localhost:${PORT}`);
+    console.log(
+      `Stream token mode: ${USE_STATELESS_STREAM_TOKENS ? "stateless (HMAC)" : "in-memory"}`
+    );
     if (GA4_ANALYTICS_ENABLED && isValidGa4MeasurementId(GA4_MEASUREMENT_ID)) {
       console.log(`GA4 aktif (${GA4_MEASUREMENT_ID}).`);
     } else {
