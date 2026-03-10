@@ -280,6 +280,10 @@ const elements = {
   subscribePromo: document.getElementById("subscribePromo"),
   subscribePromoOpenBtn: document.getElementById("subscribePromoOpenBtn"),
   subscribePromoLaterBtn: document.getElementById("subscribePromoLaterBtn")
+  ,
+  monetagOverlay: document.getElementById("monetagGateOverlay"),
+  monetagCountdown: document.getElementById("monetagGateCountdown"),
+  monetagContinue: document.getElementById("monetagGateContinue")
 };
 
 function setStatus(message, type = "") {
@@ -323,6 +327,7 @@ function buildRequestHeaders(extraHeaders = {}) {
 const GA4_SCRIPT_SRC_BASE = "https://www.googletagmanager.com/gtag/js";
 let ga4BootstrappedId = "";
 let monetagLoaded = false;
+let monetagGateDone = false;
 
 function isValidGa4MeasurementId(value) {
   return /^G-[A-Z0-9]{5,}$/i.test(String(value || "").trim());
@@ -423,6 +428,51 @@ function sendGaEvent(eventName, params = {}) {
   } catch {
     // Abaikan error tracking eksternal.
   }
+}
+
+function showMonetagGateCountdown(seconds = 8) {
+  return new Promise((resolve) => {
+    const overlay = elements.monetagOverlay;
+    const countdownEl = elements.monetagCountdown;
+    const button = elements.monetagContinue;
+    if (!overlay || !countdownEl || !button) {
+      resolve();
+      return;
+    }
+
+    overlay.classList.remove("hidden");
+    button.disabled = true;
+
+    let remaining = Math.max(1, Number(seconds) || 8);
+    countdownEl.textContent = String(remaining);
+
+    const timer = setInterval(() => {
+      remaining -= 1;
+      countdownEl.textContent = String(Math.max(0, remaining));
+      if (remaining <= 0) {
+        clearInterval(timer);
+        button.disabled = false;
+      }
+    }, 1000);
+
+    const onClick = () => {
+      button.removeEventListener("click", onClick);
+      overlay.classList.add("hidden");
+      resolve();
+    };
+    button.addEventListener("click", onClick);
+  });
+}
+
+async function runMonetagGateIfNeeded(episode) {
+  const isEpOne = Number(episode?.number) === 1;
+  if (!isEpOne || monetagGateDone) {
+    return;
+  }
+
+  loadMonetagOnce();
+  await showMonetagGateCountdown(8);
+  monetagGateDone = true;
 }
 
 function sanitizeCountValue(value) {
@@ -1894,6 +1944,8 @@ async function openEpisode(episodeNumber, { resumeSeconds = null, trackEpisodeCl
     return;
   }
 
+  await runMonetagGateIfNeeded(episode);
+
   if (trackEpisodeClick) {
     trackEpisodeClickMetric(state.drama?.id, episode.number);
     sendGaEvent("episode_select", {
@@ -1901,10 +1953,6 @@ async function openEpisode(episodeNumber, { resumeSeconds = null, trackEpisodeCl
       drama_title: String(state.drama?.title || ""),
       episode_number: Number(episode.number) || 0
     });
-  }
-
-  if (Number(episode.number) === 1) {
-    loadMonetagOnce();
   }
 
   state.currentEpisodeNumber = episode.number;
