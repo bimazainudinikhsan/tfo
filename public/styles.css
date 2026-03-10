@@ -693,6 +693,20 @@ body.preview-mode .preview-inner {
   background: #000;
 }
 
+#imaAdContainer.ad-container {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+#imaAdContainer.hidden {
+  display: none;
+}
+
 #videoPlayer {
   display: block;
   width: 100%;

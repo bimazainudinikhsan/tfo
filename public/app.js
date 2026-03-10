@@ -18,6 +18,8 @@ const SUBSCRIBE_PROMO_COOLDOWN_KEY = "top_film_one_subscribe_promo_cooldown_unti
 const SUBSCRIBE_PROMO_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const countFormatter = new Intl.NumberFormat("id-ID");
 const pageParams = new URLSearchParams(window.location.search || "");
+const AD_VAST_TAG_URL =
+  "https://roughremove.com/damzFGzId.GtN/vpZpGPUm/aeGmj9Qu/ZGUAlYkNPgTMYQ4VNYT/YQw/NIzYM/tsNrjgg/1DNMjZAS3/NOygZmsGazWm1DpsdoDo0bxe";
 
 function getPageParam(name) {
   return String(pageParams.get(name) || "").trim();
@@ -277,7 +279,8 @@ const elements = {
   subscribePromoBackdrop: document.getElementById("subscribePromoBackdrop"),
   subscribePromo: document.getElementById("subscribePromo"),
   subscribePromoOpenBtn: document.getElementById("subscribePromoOpenBtn"),
-  subscribePromoLaterBtn: document.getElementById("subscribePromoLaterBtn")
+  subscribePromoLaterBtn: document.getElementById("subscribePromoLaterBtn"),
+  imaAdContainer: document.getElementById("imaAdContainer")
 };
 
 function setStatus(message, type = "") {
@@ -320,6 +323,11 @@ function buildRequestHeaders(extraHeaders = {}) {
 
 const GA4_SCRIPT_SRC_BASE = "https://www.googletagmanager.com/gtag/js";
 let ga4BootstrappedId = "";
+let adPrerollPlayed = new Set();
+let imaAdsLoader = null;
+let imaAdsManager = null;
+let imaAdDisplayContainer = null;
+let imaSdkLoaded = false;
 
 function isValidGa4MeasurementId(value) {
   return /^G-[A-Z0-9]{5,}$/i.test(String(value || "").trim());
@@ -399,6 +407,123 @@ function sendGaEvent(eventName, params = {}) {
   } catch {
     // Abaikan error tracking eksternal.
   }
+}
+
+function loadImaSdk() {
+  if (imaSdkLoaded || typeof window.google?.ima === "object") {
+    imaSdkLoaded = true;
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[src*="imasdk.googleapis.com/js/sdkloader/ima3.js"]');
+    if (existing && existing.dataset.loaded === "1") {
+      imaSdkLoaded = true;
+      resolve();
+      return;
+    }
+
+    if (existing) {
+      existing.addEventListener("load", () => {
+        imaSdkLoaded = true;
+        resolve();
+      });
+      existing.addEventListener("error", () => reject(new Error("Gagal memuat IMA SDK")));
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://imasdk.googleapis.com/js/sdkloader/ima3.js";
+    script.async = true;
+    script.dataset.loaded = "0";
+    script.addEventListener("load", () => {
+      script.dataset.loaded = "1";
+      imaSdkLoaded = true;
+      resolve();
+    });
+    script.addEventListener("error", () => reject(new Error("Gagal memuat IMA SDK")));
+    document.head.appendChild(script);
+  });
+}
+
+function destroyImaManager() {
+  try {
+    imaAdsManager?.destroy();
+  } catch {
+    // ignore
+  }
+  imaAdsManager = null;
+}
+
+async function playVastPreroll({ dramaId, episodeNumber }) {
+  if (!elements.videoPlayer || !elements.imaAdContainer) {
+    return;
+  }
+
+  await loadImaSdk().catch(() => {});
+  if (typeof google?.ima !== "object") {
+    return;
+  }
+
+  if (!imaAdDisplayContainer) {
+    imaAdDisplayContainer = new google.ima.AdDisplayContainer(elements.imaAdContainer, elements.videoPlayer);
+  }
+  imaAdDisplayContainer.initialize();
+
+  imaAdsLoader = new google.ima.AdsLoader(imaAdDisplayContainer);
+
+  return new Promise((resolve) => {
+    const cleanup = () => {
+      destroyImaManager();
+      elements.imaAdContainer.classList.add("hidden");
+      imaAdsLoader?.destroy?.();
+      imaAdsLoader = null;
+      resolve();
+    };
+
+    imaAdsLoader.addEventListener(google.ima.AdsManagerLoadedEvent.Type.ADS_MANAGER_LOADED, (event) => {
+      try {
+        imaAdsManager = event.getAdsManager(elements.videoPlayer);
+        imaAdsManager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, cleanup);
+        imaAdsManager.addEventListener(google.ima.AdEvent.Type.ALL_ADS_COMPLETED, cleanup);
+        imaAdsManager.addEventListener(google.ima.AdEvent.Type.COMPLETE, cleanup);
+
+        elements.imaAdContainer.classList.remove("hidden");
+        imaAdsManager.init(elements.videoPlayer.clientWidth, elements.videoPlayer.clientHeight, google.ima.ViewMode.NORMAL);
+        imaAdsManager.start();
+      } catch {
+        cleanup();
+      }
+    });
+
+    imaAdsLoader.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, () => {
+      cleanup();
+    });
+
+    const adsRequest = new google.ima.AdsRequest();
+    adsRequest.adTagUrl = AD_VAST_TAG_URL;
+    adsRequest.linearAdSlotWidth = elements.videoPlayer.clientWidth;
+    adsRequest.linearAdSlotHeight = elements.videoPlayer.clientHeight;
+    adsRequest.nonLinearAdSlotWidth = elements.videoPlayer.clientWidth;
+    adsRequest.nonLinearAdSlotHeight = Math.floor(elements.videoPlayer.clientHeight / 3);
+    try {
+      imaAdsLoader.requestAds(adsRequest);
+    } catch {
+      cleanup();
+    }
+  });
+}
+
+async function maybePlayPreroll(episode) {
+  if (!episode || Number(episode.number) !== 1) {
+    return;
+  }
+  const key = `drama:${state.drama?.id || ""}-ep:${episode.number}`;
+  if (adPrerollPlayed.has(key)) {
+    return;
+  }
+  adPrerollPlayed.add(key);
+  await playVastPreroll({ dramaId: state.drama?.id, episodeNumber: episode.number });
 }
 
 function sanitizeCountValue(value) {
@@ -1869,6 +1994,8 @@ async function openEpisode(episodeNumber, { resumeSeconds = null, trackEpisodeCl
     });
     return;
   }
+
+  await maybePlayPreroll(episode);
 
   if (trackEpisodeClick) {
     trackEpisodeClickMetric(state.drama?.id, episode.number);
