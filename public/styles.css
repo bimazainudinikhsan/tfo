@@ -677,6 +677,221 @@ body.preview-mode .preview-inner {
   color: #ebf2fb;
 }
 
+.comments-panel {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(13, 24, 34, 0.85), rgba(12, 18, 26, 0.75));
+  border: 1px solid rgba(120, 160, 190, 0.25);
+  box-shadow: 0 16px 40px rgba(2, 8, 16, 0.35);
+  backdrop-filter: blur(12px);
+}
+
+.comments-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  color: #e8f1ff;
+  font-weight: 600;
+}
+
+.comments-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #ff5a7a;
+  box-shadow: 0 0 8px rgba(255, 90, 122, 0.9);
+  animation: livePulse 1.4s ease-in-out infinite;
+}
+
+.comment-count {
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #c8d6ea;
+}
+
+.comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.comment-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(7, 14, 22, 0.65);
+  border: 1px solid rgba(120, 160, 190, 0.2);
+}
+
+.comment-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.comment-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.comment-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: #9ab1c9;
+  margin-bottom: 6px;
+}
+
+.comment-time {
+  color: #7f96ae;
+  font-size: 0.7rem;
+}
+
+.comment-name {
+  font-weight: 600;
+  color: #f0f6ff;
+}
+
+.comment-text {
+  font-size: 0.9rem;
+  color: #e4edfb;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.comment-empty {
+  text-align: center;
+  font-size: 0.85rem;
+  color: #9bb0c5;
+  padding: 12px 0;
+}
+
+.comment-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.comment-input {
+  flex: 1;
+  border-radius: 12px;
+  border: 1px solid rgba(120, 160, 190, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f7fbff;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+}
+
+.comment-input:focus {
+  outline: none;
+  border-color: rgba(120, 190, 220, 0.6);
+  box-shadow: 0 0 0 2px rgba(90, 160, 220, 0.2);
+}
+
+.comment-submit {
+  border: none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #ff5a7a, #ff8fab);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.comment-submit:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 16px rgba(255, 90, 122, 0.25);
+}
+
+.player-live-comments {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  width: min(320px, 85vw);
+  max-height: 52vh;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(8, 14, 22, 0.78);
+  border: 1px solid rgba(120, 160, 190, 0.25);
+  box-shadow: 0 20px 48px rgba(2, 8, 16, 0.5);
+  backdrop-filter: blur(14px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 20;
+}
+
+.player-comments-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #e8f1ff;
+  font-weight: 600;
+}
+
+.comments-close {
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8f1ff;
+  border-radius: 999px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.player-live-comments .comment-list {
+  max-height: 220px;
+}
+
+.player-action-btn.comments {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(120, 160, 190, 0.25);
+  color: #e8f1ff;
+}
+
+@keyframes livePulse {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.85);
+    opacity: 0.7;
+  }
+}
+
 .player-view {
   position: relative;
   background: #000;

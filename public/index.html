@@ -46,6 +46,8 @@
       content="f7b59b861099694308f794c3f2d9ec6e7e4cb538"
     />
     <script src="https://imasdk.googleapis.com/js/sdkloader/ima3.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
     <meta id="twitterImageMeta" name="twitter:image" content="/assets/logo.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="shortcut icon" href="/assets/logo.png" />
@@ -151,6 +153,27 @@
           </div>
           <p id="previewDramaClicks" class="preview-drama-clicks">Diklik - kali</p>
           <button id="watchNowBtn" class="watch-now-btn" type="button">Tonton Sekarang</button>
+          <section id="previewComments" class="comments-panel">
+            <div class="comments-header">
+              <div class="comments-title">
+                <span class="live-dot" aria-hidden="true"></span>
+                Live Komentar
+              </div>
+              <span id="previewCommentCount" class="comment-count">0</span>
+            </div>
+            <div id="previewCommentList" class="comment-list"></div>
+            <form id="previewCommentForm" class="comment-form" autocomplete="off">
+              <input
+                id="previewCommentInput"
+                class="comment-input"
+                type="text"
+                placeholder="Tulis komentar..."
+                maxlength="200"
+                aria-label="Tulis komentar"
+              />
+              <button class="comment-submit" type="submit">Kirim</button>
+            </form>
+          </section>
           <div class="preview-synopsis">
             <h3>Sinopsis</h3>
             <p id="previewSynopsis">-</p>
@@ -181,7 +204,32 @@
             <button id="saveDramaBtn" class="player-action-btn save" type="button">Simpan</button>
             <button id="openEpisodeSheetBtn" class="player-action-btn episode" type="button">Episode</button>
             <button id="shareDramaBtn" class="player-action-btn share" type="button">Bagikan</button>
+            <button id="toggleLiveCommentsBtn" class="player-action-btn comments" type="button">Komentar</button>
           </div>
+
+          <section id="playerLiveComments" class="player-live-comments hidden" aria-live="polite">
+            <div class="player-comments-header">
+              <div class="comments-title">
+                <span class="live-dot" aria-hidden="true"></span>
+                Live Komentar
+              </div>
+              <button id="closeLiveCommentsBtn" class="comments-close" type="button" aria-label="Tutup komentar">
+                &times;
+              </button>
+            </div>
+            <div id="playerCommentList" class="comment-list"></div>
+            <form id="playerCommentForm" class="comment-form" autocomplete="off">
+              <input
+                id="playerCommentInput"
+                class="comment-input"
+                type="text"
+                placeholder="Ketik komentar saat nonton..."
+                maxlength="200"
+                aria-label="Tulis komentar"
+              />
+              <button class="comment-submit" type="submit">Kirim</button>
+            </form>
+          </section>
 
           <button id="centerPlayBtn" class="center-play-btn hidden" type="button" aria-label="Putar">
             <span class="center-play-icon" aria-hidden="true"></span>

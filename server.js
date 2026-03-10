@@ -142,12 +142,45 @@ const FIREBASE_YOUTUBE_VERIFICATIONS_PATH = String(
 const FIREBASE_ANALYTICS_PATH = String(process.env.FIREBASE_ANALYTICS_PATH || "teleminidrama/analytics")
   .trim()
   .replace(/^\/+|\/+$/g, "");
+const FIREBASE_COMMENTS_PATH = String(process.env.FIREBASE_COMMENTS_PATH || "teleminidrama/comments")
+  .trim()
+  .replace(/^\/+|\/+$/g, "");
+const FIREBASE_WEB_API_KEY = String(process.env.FIREBASE_WEB_API_KEY || "").trim();
+const FIREBASE_WEB_AUTH_DOMAIN = String(process.env.FIREBASE_WEB_AUTH_DOMAIN || "").trim();
+const FIREBASE_WEB_PROJECT_ID = String(process.env.FIREBASE_WEB_PROJECT_ID || "").trim();
+const FIREBASE_WEB_APP_ID = String(process.env.FIREBASE_WEB_APP_ID || "").trim();
+const FIREBASE_WEB_DATABASE_URL = String(
+  process.env.FIREBASE_WEB_DATABASE_URL || process.env.FIREBASE_DATABASE_URL || ""
+).trim();
+const FIREBASE_WEB_MESSAGING_SENDER_ID = String(process.env.FIREBASE_WEB_MESSAGING_SENDER_ID || "").trim();
+const FIREBASE_WEB_STORAGE_BUCKET = String(process.env.FIREBASE_WEB_STORAGE_BUCKET || "").trim();
+const COMMENT_MESSAGE_MAX_LENGTH = 200;
+const COMMENT_NAME_MAX_LENGTH = 32;
+const COMMENTS_MAX_PER_DRAMA = 200;
+const COMMENT_BANNED_WORDS = [
+  "anjing",
+  "babi",
+  "bangsat",
+  "bajingan",
+  "brengsek",
+  "kampret",
+  "kontol",
+  "memek",
+  "ngentot",
+  "peler",
+  "jancok",
+  "tolol",
+  "goblok",
+  "bego",
+  "asu"
+];
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DATA_FILE = path.join(__dirname, "data", "library.json");
 const YOUTUBE_VERIFICATION_FILE = path.join(__dirname, "data", "youtube_verifications.json");
 const ANALYTICS_FILE = path.join(__dirname, "data", "analytics.json");
+const COMMENTS_FILE = path.join(__dirname, "data", "comments.json");
 const PUBLIC_DIR = path.join(__dirname, "public");
 const TMP_UPLOAD_DIR = resolveTemporaryUploadDir();
 
@@ -1041,6 +1074,42 @@ function isValidGa4MeasurementId(value) {
   return /^G-[A-Z0-9]{5,}$/i.test(String(value || "").trim());
 }
 
+function getPublicFirebaseConfig() {
+  const databaseURL = FIREBASE_WEB_DATABASE_URL || FIREBASE_DATABASE_URL;
+  const enabled = Boolean(
+    FIREBASE_RTDB_ENABLED && FIREBASE_WEB_API_KEY && databaseURL && FIREBASE_WEB_PROJECT_ID
+  );
+  if (!enabled) {
+    return {
+      enabled: false,
+      config: null,
+      commentsPath: ""
+    };
+  }
+
+  const config = {
+    apiKey: FIREBASE_WEB_API_KEY,
+    authDomain: FIREBASE_WEB_AUTH_DOMAIN || `${FIREBASE_WEB_PROJECT_ID}.firebaseapp.com`,
+    databaseURL,
+    projectId: FIREBASE_WEB_PROJECT_ID,
+    appId: FIREBASE_WEB_APP_ID,
+    messagingSenderId: FIREBASE_WEB_MESSAGING_SENDER_ID,
+    storageBucket: FIREBASE_WEB_STORAGE_BUCKET
+  };
+
+  for (const key of Object.keys(config)) {
+    if (!config[key]) {
+      delete config[key];
+    }
+  }
+
+  return {
+    enabled: true,
+    config,
+    commentsPath: FIREBASE_COMMENTS_PATH
+  };
+}
+
 function getPublicAppConfig() {
   const measurementId = String(GA4_MEASUREMENT_ID || "").trim();
   const ga4Enabled = GA4_ANALYTICS_ENABLED && isValidGa4MeasurementId(measurementId);
@@ -1050,7 +1119,8 @@ function getPublicAppConfig() {
         enabled: ga4Enabled,
         measurementId: ga4Enabled ? measurementId : ""
       }
-    }
+    },
+    firebase: getPublicFirebaseConfig()
   };
 }
 
@@ -1350,6 +1420,169 @@ function sanitizeAnalyticsStatsPayload(input) {
     dramaClicks: store.dramaClicks,
     episodeClicks: store.episodeClicks
   };
+}
+
+function normalizeCommentText(value) {
+  const cleaned = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) {
+    return "";
+  }
+  return cleaned.slice(0, COMMENT_MESSAGE_MAX_LENGTH);
+}
+
+function escapeRegex(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function moderateCommentMessage(value) {
+  let message = String(value || "");
+  if (!message) {
+    return {
+      message: "",
+      moderated: false
+    };
+  }
+
+  let moderated = false;
+  for (const word of COMMENT_BANNED_WORDS) {
+    const pattern = new RegExp(escapeRegex(word), "gi");
+    if (pattern.test(message)) {
+      moderated = true;
+      message = message.replace(pattern, (match) => "*".repeat(match.length));
+    }
+  }
+
+  return {
+    message,
+    moderated
+  };
+}
+
+function normalizeCommentName(value) {
+  const cleaned = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) {
+    return "";
+  }
+  return cleaned.slice(0, COMMENT_NAME_MAX_LENGTH);
+}
+
+function normalizeCommentEntry(input) {
+  const message = normalizeCommentText(input?.message);
+  if (!message) {
+    return null;
+  }
+
+  const name = normalizeCommentName(input?.name) || "Pengunjung";
+  const viewerId = normalizeViewerId(input?.viewerId || "");
+  const createdAt = new Date(input?.createdAt || Date.now()).toISOString();
+  const id = String(input?.id || randomUUID()).trim() || randomUUID();
+
+  return {
+    id,
+    message,
+    name,
+    viewerId,
+    createdAt
+  };
+}
+
+function normalizeCommentList(list) {
+  const source = Array.isArray(list) ? list : [];
+  const normalized = [];
+  for (const entry of source) {
+    const normalizedEntry = normalizeCommentEntry(entry);
+    if (normalizedEntry) {
+      normalized.push(normalizedEntry);
+    }
+  }
+
+  normalized.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  if (normalized.length > COMMENTS_MAX_PER_DRAMA) {
+    return normalized.slice(-COMMENTS_MAX_PER_DRAMA);
+  }
+  return normalized;
+}
+
+function normalizeCommentsStore(input) {
+  const source = input && typeof input === "object" ? input : {};
+  const normalized = {};
+  for (const [dramaIdRaw, list] of Object.entries(source)) {
+    const dramaId = normalizeAnalyticsKey(dramaIdRaw);
+    if (!dramaId) {
+      continue;
+    }
+    normalized[dramaId] = normalizeCommentList(list);
+  }
+
+  return normalized;
+}
+
+async function readCommentsStore() {
+  if (shouldUseFirebaseRealtimeDb()) {
+    const remoteValue = await readJsonFromFirebasePath(FIREBASE_COMMENTS_PATH, null);
+    if (remoteValue) {
+      return normalizeCommentsStore(remoteValue);
+    }
+
+    try {
+      const raw = await readFile(COMMENTS_FILE, "utf-8");
+      const localStore = normalizeCommentsStore(JSON.parse(raw));
+      await writeJsonToFirebasePath(FIREBASE_COMMENTS_PATH, localStore);
+      return localStore;
+    } catch {
+      return {};
+    }
+  }
+
+  try {
+    const raw = await readFile(COMMENTS_FILE, "utf-8");
+    return normalizeCommentsStore(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
+async function writeCommentsStore(store) {
+  const next = normalizeCommentsStore(store);
+  if (shouldUseFirebaseRealtimeDb()) {
+    await writeJsonToFirebasePath(FIREBASE_COMMENTS_PATH, next);
+    return;
+  }
+
+  await writeFile(COMMENTS_FILE, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
+}
+
+async function listCommentsForDrama(dramaId) {
+  const safeDramaId = normalizeAnalyticsKey(dramaId);
+  if (!safeDramaId) {
+    return [];
+  }
+
+  const store = await readCommentsStore();
+  return normalizeCommentList(store[safeDramaId] || []);
+}
+
+async function addCommentToDrama(dramaId, comment) {
+  const safeDramaId = normalizeAnalyticsKey(dramaId);
+  if (!safeDramaId) {
+    throw new Error("dramaId tidak valid.");
+  }
+
+  const normalizedComment = normalizeCommentEntry(comment);
+  if (!normalizedComment) {
+    throw new Error("Komentar kosong.");
+  }
+
+  const store = await readCommentsStore();
+  const current = Array.isArray(store[safeDramaId]) ? store[safeDramaId] : [];
+  const nextList = normalizeCommentList([...current, normalizedComment]);
+  store[safeDramaId] = nextList;
+  await writeCommentsStore(store);
+  return nextList;
 }
 
 async function readAnalyticsStore() {
@@ -2796,6 +3029,70 @@ app.post("/api/analytics/episode-click", async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       message: "Gagal mencatat klik episode.",
+      detail: error.message
+    });
+  }
+});
+
+app.get("/api/comments/:dramaId", async (req, res) => {
+  try {
+    res.setHeader("cache-control", "no-store");
+    const dramaId = normalizeAnalyticsKey(req.params.dramaId || req.query?.dramaId);
+    if (!dramaId) {
+      return res.status(400).json({
+        message: "dramaId wajib diisi."
+      });
+    }
+
+    const comments = await listCommentsForDrama(dramaId);
+    return res.json({
+      dramaId,
+      comments
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Gagal membaca komentar.",
+      detail: error.message
+    });
+  }
+});
+
+app.post("/api/comments/:dramaId", async (req, res) => {
+  try {
+    const dramaId = normalizeAnalyticsKey(req.params.dramaId || req.body?.dramaId || req.query?.dramaId);
+    if (!dramaId) {
+      return res.status(400).json({
+        message: "dramaId wajib diisi."
+      });
+    }
+
+  const message = normalizeCommentText(req.body?.message || req.query?.message);
+  if (!message) {
+    return res.status(400).json({
+      message: "Komentar wajib diisi."
+    });
+  }
+
+  const name = normalizeCommentName(req.body?.name || req.query?.name) || "Pengunjung";
+  const moderatedResult = moderateCommentMessage(message);
+  const viewerId = getViewerIdFromRequest(req);
+  const comment = {
+    message: moderatedResult.message,
+    name,
+    viewerId,
+    createdAt: new Date().toISOString()
+  };
+
+  const comments = await addCommentToDrama(dramaId, comment);
+  return res.json({
+    message: "Komentar terkirim.",
+    dramaId,
+    comments,
+    moderated: moderatedResult.moderated
+  });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Gagal mengirim komentar.",
       detail: error.message
     });
   }

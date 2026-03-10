@@ -22,6 +22,19 @@ const AD_VAST_TAG_URL =
   "https://ancientsnow.com/d.m/FPzHd_GYNyvDZxGyUB/OePm/9XueZcUrlKkEP/TGYF4/NWTHYkw/N-zSMgtANEjigK1xNEjnAz3yNjyAZXs/a/WX1spUdqDf0UxJ";
 const AD_PREROLL_TIMEOUT_MS = 15000;
 const AD_PREROLL_PLAYBACK_TIMEOUT_MS = 60000;
+const COMMENTS_POLL_INTERVAL_MS = 5000;
+const COMMENT_MESSAGE_MAX_LENGTH = 200;
+const COMMENT_RENDER_LIMIT = 60;
+const COMMENT_COLOR_PALETTE = [
+  { bg: "#3b82f6", text: "#eff6ff", accent: "#9ac2ff" },
+  { bg: "#10b981", text: "#ecfdf5", accent: "#86efac" },
+  { bg: "#f59e0b", text: "#fff7ed", accent: "#fcd34d" },
+  { bg: "#ef4444", text: "#fff1f2", accent: "#fda4af" },
+  { bg: "#8b5cf6", text: "#f5f3ff", accent: "#c4b5fd" },
+  { bg: "#06b6d4", text: "#ecfeff", accent: "#67e8f9" },
+  { bg: "#f97316", text: "#fff7ed", accent: "#fdba74" },
+  { bg: "#22c55e", text: "#f0fdf4", accent: "#86efac" }
+];
 
 function getPageParam(name) {
   return String(pageParams.get(name) || "").trim();
@@ -67,6 +80,25 @@ function getOrCreateViewerId() {
   } catch {
     return generateFallbackViewerId();
   }
+}
+
+function getViewerDisplayName() {
+  const telegramUser = telegram?.initDataUnsafe?.user;
+  if (telegramUser) {
+    const username = String(telegramUser.username || "").trim();
+    if (username) {
+      return `@${username}`;
+    }
+
+    const first = String(telegramUser.first_name || "").trim();
+    const last = String(telegramUser.last_name || "").trim();
+    const fullName = `${first} ${last}`.trim();
+    if (fullName) {
+      return fullName;
+    }
+  }
+
+  return "Pengunjung";
 }
 
 function readFavorites() {
@@ -201,6 +233,21 @@ const state = {
     dramaClicks: {},
     episodeClicks: {}
   },
+  comments: {
+    dramaId: "",
+    items: []
+  },
+  commentsPollTimer: null,
+  commentsPollInFlight: false,
+  liveCommentsVisible: false,
+  commentsSubscription: null,
+  firebase: {
+    enabled: false,
+    config: null,
+    commentsPath: ""
+  },
+  firebaseApp: null,
+  firebaseDb: null,
   youtubeGate: {
     enabled: false,
     verified: true,
@@ -250,6 +297,11 @@ const elements = {
   previewDramaClicks: document.getElementById("previewDramaClicks"),
   previewSynopsis: document.getElementById("previewSynopsis"),
   watchNowBtn: document.getElementById("watchNowBtn"),
+  previewComments: document.getElementById("previewComments"),
+  previewCommentCount: document.getElementById("previewCommentCount"),
+  previewCommentList: document.getElementById("previewCommentList"),
+  previewCommentForm: document.getElementById("previewCommentForm"),
+  previewCommentInput: document.getElementById("previewCommentInput"),
   detailLayout: document.getElementById("detailLayout"),
   dramaPicker: document.getElementById("dramaPicker"),
   playerBackBtn: document.getElementById("playerBackBtn"),
@@ -268,6 +320,12 @@ const elements = {
   saveDramaBtn: document.getElementById("saveDramaBtn"),
   openEpisodeSheetBtn: document.getElementById("openEpisodeSheetBtn"),
   shareDramaBtn: document.getElementById("shareDramaBtn"),
+  toggleLiveCommentsBtn: document.getElementById("toggleLiveCommentsBtn"),
+  playerLiveComments: document.getElementById("playerLiveComments"),
+  closeLiveCommentsBtn: document.getElementById("closeLiveCommentsBtn"),
+  playerCommentList: document.getElementById("playerCommentList"),
+  playerCommentForm: document.getElementById("playerCommentForm"),
+  playerCommentInput: document.getElementById("playerCommentInput"),
   episodeSheetBackdrop: document.getElementById("episodeSheetBackdrop"),
   episodeSheet: document.getElementById("episodeSheet"),
   episodeSheetGrid: document.getElementById("episodeSheetGrid"),
@@ -392,13 +450,113 @@ async function setupGa4TrackingFromServerConfig() {
     const enabled = Boolean(payload?.analytics?.ga4?.enabled);
     const measurementId = String(payload?.analytics?.ga4?.measurementId || "").trim();
     if (!enabled) {
-      return;
+      // lanjut konfigurasi lain tanpa GA4
+    } else {
+      initGa4Tracking(measurementId);
     }
 
-    initGa4Tracking(measurementId);
+    const firebasePayload = payload?.firebase;
+    if (firebasePayload?.enabled && firebasePayload?.config) {
+      state.firebase = {
+        enabled: true,
+        config: firebasePayload.config,
+        commentsPath: String(firebasePayload.commentsPath || "").trim()
+      };
+      initFirebaseClient();
+    } else {
+      state.firebase = {
+        enabled: false,
+        config: null,
+        commentsPath: ""
+      };
+    }
   } catch {
     // Abaikan error analytics eksternal agar app utama tetap jalan.
   }
+}
+
+function initFirebaseClient() {
+  if (!state.firebase?.enabled || !state.firebase?.config) {
+    return false;
+  }
+  if (state.firebaseApp && state.firebaseDb) {
+    return true;
+  }
+  if (typeof window.firebase?.initializeApp !== "function") {
+    return false;
+  }
+
+  try {
+    const appName = "teleminidrama-web";
+    const existing = window.firebase.apps?.find((app) => app.name === appName);
+    const app = existing || window.firebase.initializeApp(state.firebase.config, appName);
+    state.firebaseApp = app;
+    state.firebaseDb = window.firebase.database(app);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getFirebaseCommentsRef(dramaId) {
+  if (!initFirebaseClient()) {
+    return null;
+  }
+  const basePath = String(state.firebase?.commentsPath || "")
+    .trim()
+    .replace(/^\/+|\/+$/g, "");
+  if (!basePath) {
+    return null;
+  }
+  const safeDramaId = String(dramaId || "").trim();
+  if (!safeDramaId) {
+    return null;
+  }
+  return state.firebaseDb.ref(`${basePath}/${safeDramaId}`).limitToLast(COMMENT_RENDER_LIMIT);
+}
+
+function unsubscribeRealtimeComments() {
+  if (state.commentsSubscription?.ref && state.commentsSubscription?.handler) {
+    state.commentsSubscription.ref.off("value", state.commentsSubscription.handler);
+  }
+  state.commentsSubscription = null;
+}
+
+function subscribeRealtimeComments(dramaId) {
+  const safeDramaId = String(dramaId || "").trim();
+  if (!safeDramaId) {
+    return false;
+  }
+
+  if (state.commentsSubscription?.dramaId === safeDramaId) {
+    return true;
+  }
+
+  const ref = getFirebaseCommentsRef(safeDramaId);
+  if (!ref) {
+    return false;
+  }
+
+  unsubscribeRealtimeComments();
+  const handler = (snapshot) => {
+    const raw = snapshot?.val?.();
+    let list = [];
+    if (Array.isArray(raw)) {
+      list = raw;
+    } else if (raw && typeof raw === "object") {
+      list = Object.values(raw);
+    }
+
+    applyComments(safeDramaId, list);
+  };
+
+  ref.on("value", handler);
+  state.commentsSubscription = {
+    dramaId: safeDramaId,
+    ref,
+    handler
+  };
+  return true;
 }
 
 function sendGaEvent(eventName, params = {}) {
@@ -732,6 +890,122 @@ function formatCount(value) {
   return countFormatter.format(sanitizeCountValue(value));
 }
 
+function hashString(value) {
+  const input = String(value || "");
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash << 5) - hash + input.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function getCommentAvatarInfo(comment) {
+  const name = String(comment?.name || "").trim() || "Pengunjung";
+  const seed = String(comment?.viewerId || name);
+  const hash = hashString(seed);
+  const color = COMMENT_COLOR_PALETTE[hash % COMMENT_COLOR_PALETTE.length];
+  const parts = name.split(/\s+/).filter(Boolean);
+  const initials =
+    parts.length >= 2
+      ? `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase()
+      : name.slice(0, 2).toUpperCase();
+  return {
+    name,
+    initials: initials || "P",
+    color
+  };
+}
+
+function normalizeCommentTextInput(value) {
+  const cleaned = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.slice(0, COMMENT_MESSAGE_MAX_LENGTH);
+}
+
+function formatCommentTime(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+}
+
+function renderCommentList(comments, container) {
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = "";
+  if (!Array.isArray(comments) || comments.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "comment-empty";
+    empty.textContent = "Belum ada komentar. Jadilah yang pertama!";
+    container.appendChild(empty);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (const comment of comments) {
+    const item = document.createElement("div");
+    item.className = "comment-item";
+
+    const avatarInfo = getCommentAvatarInfo(comment);
+    const avatar = document.createElement("div");
+    avatar.className = "comment-avatar";
+    avatar.textContent = avatarInfo.initials;
+    avatar.style.background = avatarInfo.color.bg;
+    avatar.style.color = avatarInfo.color.text;
+
+    const body = document.createElement("div");
+    body.className = "comment-body";
+
+    const meta = document.createElement("div");
+    meta.className = "comment-meta";
+
+    const name = document.createElement("span");
+    name.className = "comment-name";
+    name.textContent = avatarInfo.name;
+    name.style.color = avatarInfo.color.accent;
+
+    const time = document.createElement("span");
+    time.className = "comment-time";
+    time.textContent = formatCommentTime(comment?.createdAt);
+
+    const message = document.createElement("div");
+    message.className = "comment-text";
+    message.textContent = String(comment?.message || "");
+
+    meta.append(name, time);
+    body.append(meta, message);
+    item.append(avatar, body);
+    fragment.appendChild(item);
+  }
+
+  container.appendChild(fragment);
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderComments() {
+  const items = Array.isArray(state.comments?.items) ? state.comments.items.slice(-COMMENT_RENDER_LIMIT) : [];
+  if (elements.previewCommentCount) {
+    elements.previewCommentCount.textContent = formatCount(items.length);
+  }
+  renderCommentList(items, elements.previewCommentList);
+  renderCommentList(items, elements.playerCommentList);
+}
+
+function applyComments(dramaId, comments) {
+  const list = Array.isArray(comments) ? [...comments] : [];
+  list.sort((a, b) => new Date(a?.createdAt || 0) - new Date(b?.createdAt || 0));
+  state.comments = {
+    dramaId: String(dramaId || "").trim(),
+    items: list
+  };
+  renderComments();
+}
+
 function getDramaClickCount(dramaId) {
   const safeDramaId = String(dramaId || "").trim();
   if (!safeDramaId) {
@@ -819,6 +1093,140 @@ async function fetchEngagementStats({ silent = false, apply = true } = {}) {
     }
 
     return null;
+  }
+}
+
+async function fetchCommentsForDrama(dramaId, { silent = false } = {}) {
+  const safeDramaId = String(dramaId || "").trim();
+  if (!safeDramaId || state.commentsPollInFlight) {
+    return null;
+  }
+
+  state.commentsPollInFlight = true;
+  try {
+    const response = await fetch(`/api/comments/${encodeURIComponent(safeDramaId)}`, {
+      headers: buildRequestHeaders()
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.message || "Gagal membaca komentar.");
+    }
+
+    if (state.drama?.id === safeDramaId) {
+      applyComments(safeDramaId, payload.comments || []);
+    }
+    return payload;
+  } catch (error) {
+    if (!silent) {
+      setStatus(error.message, "error");
+    }
+    return null;
+  } finally {
+    state.commentsPollInFlight = false;
+  }
+}
+
+async function postCommentForDrama(message) {
+  const dramaId = String(state.drama?.id || "").trim();
+  const cleaned = normalizeCommentTextInput(message);
+  if (!dramaId || !cleaned) {
+    return;
+  }
+
+  const payloadBody = {
+    message: cleaned,
+    name: getViewerDisplayName()
+  };
+
+  const response = await fetch(`/api/comments/${encodeURIComponent(dramaId)}`, {
+    method: "POST",
+    headers: buildRequestHeaders({
+      "content-type": "application/json"
+    }),
+    body: JSON.stringify(payloadBody)
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.message || "Gagal mengirim komentar.");
+  }
+
+  if (payload.moderated) {
+    setStatus("Komentar disaring demi kenyamanan bersama.", "ok");
+  }
+
+  if (payload.comments) {
+    applyComments(dramaId, payload.comments);
+  } else if (payload.comment) {
+    const nextItems = [...(state.comments?.items || []), payload.comment];
+    applyComments(dramaId, nextItems);
+  }
+}
+
+function startCommentsPolling() {
+  if (state.commentsPollTimer) {
+    return;
+  }
+
+  state.commentsPollTimer = setInterval(() => {
+    if (state.viewMode !== "preview" && state.viewMode !== "player") {
+      return;
+    }
+    fetchCommentsForDrama(state.drama?.id, { silent: true });
+  }, COMMENTS_POLL_INTERVAL_MS);
+}
+
+function stopCommentsPolling() {
+  if (state.commentsPollTimer) {
+    clearInterval(state.commentsPollTimer);
+    state.commentsPollTimer = null;
+  }
+}
+
+function startCommentsUpdates() {
+  const dramaId = state.drama?.id;
+  if (!dramaId) {
+    return;
+  }
+
+  if (subscribeRealtimeComments(dramaId)) {
+    return;
+  }
+
+  startCommentsPolling();
+  fetchCommentsForDrama(dramaId, { silent: true });
+}
+
+function stopCommentsUpdates() {
+  unsubscribeRealtimeComments();
+  stopCommentsPolling();
+}
+
+function setLiveCommentsVisible(visible) {
+  state.liveCommentsVisible = Boolean(visible);
+  if (elements.playerLiveComments) {
+    elements.playerLiveComments.classList.toggle("hidden", !state.liveCommentsVisible);
+  }
+  if (state.liveCommentsVisible) {
+    renderComments();
+  }
+}
+
+async function handleCommentSubmit(inputElement) {
+  if (!inputElement) {
+    return;
+  }
+
+  const message = normalizeCommentTextInput(inputElement.value);
+  if (!message) {
+    return;
+  }
+
+  inputElement.value = "";
+  try {
+    await postCommentForDrama(message);
+    renderComments();
+  } catch (error) {
+    setStatus(error.message, "error");
   }
 }
 
@@ -2110,6 +2518,7 @@ function setViewMode(mode) {
     closeEpisodeSheet();
     setPlayerPlaying(false);
     setPlayerLoader(false);
+    setLiveCommentsVisible(false);
   }
 
   if (showHome || showPreview) {
@@ -2125,6 +2534,9 @@ function setViewMode(mode) {
     renderHomeGrid();
     setStatus("", "");
     maybeShowSubscribePromo();
+    stopCommentsUpdates();
+  } else {
+    startCommentsUpdates();
   }
 
   updateShareableUrl();
@@ -2318,6 +2730,9 @@ async function setDramaById(dramaId, { openFirstEpisode = false, trackDramaClick
   }
 
   state.drama = drama;
+  if (state.comments.dramaId !== drama.id) {
+    applyComments(drama.id, []);
+  }
   if (trackDramaClick) {
     trackDramaClickMetric(drama.id);
     sendGaEvent("drama_select", {
@@ -2339,6 +2754,10 @@ async function setDramaById(dramaId, { openFirstEpisode = false, trackDramaClick
   renderEpisodeSheet();
   updateSaveButton();
   updateShareableUrl();
+  fetchCommentsForDrama(drama.id, { silent: true });
+  if (state.viewMode !== "home") {
+    startCommentsUpdates();
+  }
 
   if (firstEpisode && openFirstEpisode) {
     await openEpisode(resumeTarget.episode.number, {
@@ -2739,6 +3158,32 @@ function wireEvents() {
     });
   }
 
+  if (elements.previewCommentForm && elements.previewCommentInput) {
+    elements.previewCommentForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await handleCommentSubmit(elements.previewCommentInput);
+    });
+  }
+
+  if (elements.playerCommentForm && elements.playerCommentInput) {
+    elements.playerCommentForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await handleCommentSubmit(elements.playerCommentInput);
+    });
+  }
+
+  if (elements.toggleLiveCommentsBtn) {
+    elements.toggleLiveCommentsBtn.addEventListener("click", () => {
+      setLiveCommentsVisible(!state.liveCommentsVisible);
+    });
+  }
+
+  if (elements.closeLiveCommentsBtn) {
+    elements.closeLiveCommentsBtn.addEventListener("click", () => {
+      setLiveCommentsVisible(false);
+    });
+  }
+
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       if (isLockNoticeVisible()) {
@@ -2758,6 +3203,7 @@ function wireEvents() {
     persistCurrentWatchProgress({ force: true });
     stopYoutubeVerifyPopupMonitor();
     stopRealtimeLibraryPolling();
+    stopCommentsUpdates();
   });
 }
 
