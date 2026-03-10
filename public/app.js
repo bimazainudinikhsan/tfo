@@ -506,7 +506,7 @@ function renderPreviewDramaClickCount(dramaId) {
   }
 
   const count = getDramaClickCount(dramaId);
-  elements.previewDramaClicks.textContent = `Drama ini diklik ${formatCount(count)} kali`;
+  elements.previewDramaClicks.textContent = `👁 Views ${formatCount(count)}`;
 }
 
 function applyEngagementStats(input, { rerender = true } = {}) {
@@ -1307,16 +1307,22 @@ function renderHomeGrid() {
     image.src = drama.poster;
     image.alt = `Poster ${drama.title}`;
 
+    const badge = document.createElement("div");
+    badge.className = "card-badge";
+    const badgeIcon = document.createElement("span");
+    badgeIcon.className = "card-badge-icon";
+    badgeIcon.textContent = "👁";
+    const badgeText = document.createElement("span");
+    badgeText.className = "card-badge-text";
+    badgeText.textContent = formatCount(getDramaClickCount(drama.id));
+    badge.append(badgeIcon, badgeText);
+
     const title = document.createElement("div");
     title.className = "card-title";
     title.textContent = drama.title;
 
-    const meta = document.createElement("div");
-    meta.className = "card-meta";
-    meta.textContent = `${formatCount(getDramaClickCount(drama.id))} klik`;
-
-    cover.appendChild(image);
-    button.append(cover, title, meta);
+    cover.append(image, badge);
+    button.append(cover, title);
     button.addEventListener("click", async () => {
       await setDramaById(drama.id, { openFirstEpisode: false, trackDramaClick: true });
       setViewMode("preview");
