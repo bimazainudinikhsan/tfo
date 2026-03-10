@@ -21,6 +21,7 @@ const pageParams = new URLSearchParams(window.location.search || "");
 const AD_VAST_TAG_URL =
   "https://ancientsnow.com/d.m/FPzHd_GYNyvDZxGyUB/OePm/9XueZcUrlKkEP/TGYF4/NWTHYkw/N-zSMgtANEjigK1xNEjnAz3yNjyAZXs/a/WX1spUdqDf0UxJ";
 const AD_PREROLL_TIMEOUT_MS = 15000;
+const AD_PREROLL_PLAYBACK_TIMEOUT_MS = 60000;
 
 function getPageParam(name) {
   return String(pageParams.get(name) || "").trim();
@@ -475,11 +476,21 @@ async function playVastPreroll({ dramaId, episodeNumber }) {
 
   return new Promise((resolve) => {
     let done = false;
+    let loadTimeoutId = null;
+    let playbackTimeoutId = null;
     const finish = (result) => {
       if (done) {
         return;
       }
       done = true;
+      if (loadTimeoutId) {
+        clearTimeout(loadTimeoutId);
+        loadTimeoutId = null;
+      }
+      if (playbackTimeoutId) {
+        clearTimeout(playbackTimeoutId);
+        playbackTimeoutId = null;
+      }
       resolve(result);
     };
 
@@ -489,9 +500,22 @@ async function playVastPreroll({ dramaId, episodeNumber }) {
       imaAdsLoader?.destroy?.();
       imaAdsLoader = null;
     };
+    const startPlaybackTimeout = () => {
+      if (playbackTimeoutId) {
+        return;
+      }
+      playbackTimeoutId = setTimeout(() => {
+        cleanup();
+        finish({ played: false, reason: "playback-timeout" });
+      }, AD_PREROLL_PLAYBACK_TIMEOUT_MS);
+    };
 
     imaAdsLoader.addEventListener(google.ima.AdsManagerLoadedEvent.Type.ADS_MANAGER_LOADED, (event) => {
       try {
+        if (loadTimeoutId) {
+          clearTimeout(loadTimeoutId);
+          loadTimeoutId = null;
+        }
         imaAdsManager = event.getAdsManager(elements.videoPlayer);
         imaAdsManager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, (event) => {
           const error = event?.getError?.();
@@ -509,6 +533,9 @@ async function playVastPreroll({ dramaId, episodeNumber }) {
         imaAdsManager.addEventListener(google.ima.AdEvent.Type.COMPLETE, () => {
           cleanup();
           finish({ played: true });
+        });
+        imaAdsManager.addEventListener(google.ima.AdEvent.Type.STARTED, () => {
+          startPlaybackTimeout();
         });
 
         elements.imaAdContainer.classList.remove("hidden");
@@ -543,7 +570,7 @@ async function playVastPreroll({ dramaId, episodeNumber }) {
       finish({ played: false, reason: "request-failed" });
     }
 
-    setTimeout(() => {
+    loadTimeoutId = setTimeout(() => {
       cleanup();
       finish({ played: false, reason: "timeout" });
     }, AD_PREROLL_TIMEOUT_MS);
