@@ -26,6 +26,8 @@ const AD_PREROLL_PLAYBACK_TIMEOUT_MS = 60000;
 const COMMENTS_POLL_INTERVAL_MS = 5000;
 const COMMENT_MESSAGE_MAX_LENGTH = 200;
 const COMMENT_RENDER_LIMIT = 60;
+const DRAMAS_PER_PAGE = 10;
+const PAGINATION_WINDOW_SIZE = 5;
 const PLAYER_CONTROLS_AUTOHIDE_MS = 3000;
 const COMMENT_COLOR_PALETTE = [
   { bg: "#3b82f6", text: "#eff6ff", accent: "#9ac2ff" },
@@ -224,6 +226,7 @@ const state = {
   currentEpisodeNumber: null,
   viewMode: "home",
   searchQuery: "",
+  dramaPage: 1,
   favorites: readFavorites(),
   savedHistory: readSavedHistory(),
   watchProgress: readWatchProgress(),
@@ -306,6 +309,7 @@ const elements = {
   savedSection: document.getElementById("savedSection"),
   savedGrid: document.getElementById("savedGrid"),
   dramaGrid: document.getElementById("dramaGrid"),
+  dramaPagination: document.getElementById("dramaPagination"),
   previewScreen: document.getElementById("previewScreen"),
   previewBackBtn: document.getElementById("previewBackBtn"),
   previewBackdrop: document.getElementById("previewBackdrop"),
@@ -2238,21 +2242,143 @@ function renderDramaPicker() {
   }
 }
 
+function setDramaPage(page) {
+  const nextPage = Math.max(1, Math.floor(Number(page) || 1));
+  if (state.dramaPage === nextPage) {
+    return;
+  }
+  state.dramaPage = nextPage;
+  renderHomeGrid();
+  if (elements.dramaGrid) {
+    elements.dramaGrid.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function getPaginationWindow(currentPage, totalPages) {
+  const size = PAGINATION_WINDOW_SIZE;
+  const half = Math.floor(size / 2);
+  let start = Math.max(1, currentPage - half);
+  let end = start + size - 1;
+  if (end > totalPages) {
+    end = totalPages;
+    start = Math.max(1, end - size + 1);
+  }
+  return { start, end };
+}
+
+function renderDramaPagination(totalItems) {
+  if (!elements.dramaPagination) {
+    return;
+  }
+
+  const totalPages = Math.ceil(totalItems / DRAMAS_PER_PAGE);
+  if (totalPages <= 1) {
+    elements.dramaPagination.classList.add("hidden");
+    elements.dramaPagination.innerHTML = "";
+    return;
+  }
+
+  const currentPage = Math.min(Math.max(1, state.dramaPage), totalPages);
+  elements.dramaPagination.classList.remove("hidden");
+  elements.dramaPagination.innerHTML = "";
+
+  const createButton = (label, page, { active = false, disabled = false, ariaLabel = "" } = {}) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `pagination-btn${active ? " active" : ""}`;
+    button.textContent = label;
+    if (ariaLabel) {
+      button.setAttribute("aria-label", ariaLabel);
+    }
+    if (active) {
+      button.setAttribute("aria-current", "page");
+    }
+    if (disabled) {
+      button.disabled = true;
+      button.setAttribute("aria-disabled", "true");
+    } else {
+      button.addEventListener("click", () => setDramaPage(page));
+    }
+    return button;
+  };
+
+  const createEllipsis = () => {
+    const ellipsis = document.createElement("span");
+    ellipsis.className = "pagination-ellipsis";
+    ellipsis.textContent = "...";
+    return ellipsis;
+  };
+
+  elements.dramaPagination.appendChild(
+    createButton("Sebelumnya", currentPage - 1, {
+      disabled: currentPage === 1,
+      ariaLabel: "Halaman sebelumnya"
+    })
+  );
+
+  const { start, end } = getPaginationWindow(currentPage, totalPages);
+
+  if (start > 1) {
+    elements.dramaPagination.appendChild(
+      createButton("1", 1, { active: currentPage === 1, ariaLabel: "Halaman 1" })
+    );
+    if (start > 2) {
+      elements.dramaPagination.appendChild(createEllipsis());
+    }
+  }
+
+  for (let page = start; page <= end; page += 1) {
+    elements.dramaPagination.appendChild(
+      createButton(String(page), page, {
+        active: page === currentPage,
+        ariaLabel: `Halaman ${page}`
+      })
+    );
+  }
+
+  if (end < totalPages) {
+    if (end < totalPages - 1) {
+      elements.dramaPagination.appendChild(createEllipsis());
+    }
+    elements.dramaPagination.appendChild(
+      createButton(String(totalPages), totalPages, {
+        active: currentPage === totalPages,
+        ariaLabel: `Halaman ${totalPages}`
+      })
+    );
+  }
+
+  elements.dramaPagination.appendChild(
+    createButton("Berikutnya", currentPage + 1, {
+      disabled: currentPage === totalPages,
+      ariaLabel: "Halaman berikutnya"
+    })
+  );
+}
+
 function renderHomeGrid() {
   elements.dramaGrid.innerHTML = "";
 
   const visibleDramas = state.dramas.filter((drama) => dramaMatchesCurrentQuery(drama));
+  const totalItems = visibleDramas.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / DRAMAS_PER_PAGE));
+  state.dramaPage = Math.min(Math.max(1, state.dramaPage), totalPages);
+  const startIndex = (state.dramaPage - 1) * DRAMAS_PER_PAGE;
+  const pagedDramas = totalItems
+    ? visibleDramas.slice(startIndex, startIndex + DRAMAS_PER_PAGE)
+    : [];
 
-  if (!visibleDramas.length) {
+  if (!pagedDramas.length) {
     const empty = document.createElement("div");
     empty.className = "home-empty";
     empty.textContent = "Drama tidak ditemukan. Coba kata kunci lain.";
     elements.dramaGrid.appendChild(empty);
     renderHomeCollections();
+    renderDramaPagination(0);
     return;
   }
 
-  for (const drama of visibleDramas) {
+  for (const drama of pagedDramas) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `home-card ${state.drama?.id === drama.id ? "active" : ""}`.trim();
@@ -2289,6 +2415,7 @@ function renderHomeGrid() {
   }
 
   renderHomeCollections();
+  renderDramaPagination(totalItems);
 }
 
 function buildHomeCollectionCard(drama, metaText, onClick) {
@@ -2336,7 +2463,7 @@ function renderHomeCollections() {
     elements.resumeSection.classList.add("hidden");
   } else {
     elements.resumeSection.classList.remove("hidden");
-    for (const item of resumeItems.slice(0, 12)) {
+    for (const item of resumeItems.slice(0, 1)) {
       const drama = item.drama;
       const episodeNumber = Number(item.progress?.episodeNumber) || 1;
       const timeSec = Math.max(0, Number(item.progress?.timeSec) || 0);
@@ -2741,8 +2868,7 @@ function showPlayerControls({ autoHide = true } = {}) {
   }
   if (autoHide && !elements.videoPlayer.paused) {
     state.playerControlsHideTimer = setTimeout(() => {
-      state.playerControlsVisible = false;
-      updatePlaybackControlsVisibility();
+      hidePlayerControls();
     }, PLAYER_CONTROLS_AUTOHIDE_MS);
   }
 }
@@ -3545,6 +3671,7 @@ function wireEvents() {
   if (elements.dramaSearch) {
     elements.dramaSearch.addEventListener("input", () => {
       state.searchQuery = String(elements.dramaSearch.value || "");
+      state.dramaPage = 1;
       renderHomeGrid();
     });
   }

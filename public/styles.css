@@ -267,6 +267,32 @@ body {
   padding-bottom: 0;
 }
 
+#resumeGrid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+#resumeGrid .home-mini-card {
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  min-height: 124px;
+  box-shadow: 0 14px 24px rgba(4, 10, 16, 0.35);
+}
+
+#resumeGrid .home-mini-poster {
+  width: 92px;
+  height: 124px;
+  border-radius: 9px;
+}
+
+#resumeGrid .home-mini-title {
+  font-size: 0.96rem;
+}
+
+#resumeGrid .home-mini-meta {
+  font-size: 0.78rem;
+}
+
 .home-mini-card {
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 12px;
@@ -333,6 +359,53 @@ body {
   overflow: visible;
   padding-bottom: 0;
   align-items: start;
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  margin: 18px 0 6px;
+}
+
+.pagination-btn {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: linear-gradient(160deg, rgba(16, 34, 46, 0.96), rgba(9, 22, 30, 0.98));
+  color: #d9e7f3;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(255, 140, 70, 0.6);
+  box-shadow: 0 10px 18px rgba(6, 12, 18, 0.28);
+}
+
+.pagination-btn.active {
+  background: linear-gradient(135deg, #ff7c3a, #ff4b8d);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 12px 22px rgba(255, 90, 110, 0.3);
+}
+
+.pagination-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  box-shadow: none;
+}
+
+.pagination-ellipsis {
+  color: #9db5c4;
+  font-weight: 600;
+  padding: 0 4px;
 }
 
 .home-card {
@@ -1841,6 +1914,36 @@ body.player-mode #videoPlayer {
   .home-mini-meta {
     font-size: 0.68rem;
     margin-top: 5px;
+  }
+
+  #resumeGrid .home-mini-card {
+    grid-template-columns: 74px minmax(0, 1fr);
+    gap: 10px;
+    padding: 10px;
+    min-height: 106px;
+  }
+
+  #resumeGrid .home-mini-poster {
+    width: 74px;
+    height: 100px;
+  }
+
+  #resumeGrid .home-mini-title {
+    font-size: 0.86rem;
+  }
+
+  #resumeGrid .home-mini-meta {
+    font-size: 0.72rem;
+  }
+
+  .pagination {
+    gap: 6px;
+    margin: 14px 0 2px;
+  }
+
+  .pagination-btn {
+    padding: 6px 10px;
+    font-size: 0.72rem;
   }
 
   .preview-screen {
