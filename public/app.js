@@ -19,7 +19,7 @@ const SUBSCRIBE_PROMO_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const countFormatter = new Intl.NumberFormat("id-ID");
 const pageParams = new URLSearchParams(window.location.search || "");
 const AD_VAST_TAG_URL =
-  "https://roughremove.com/damzFGzId.GtN/vpZpGPUm/aeGmj9Qu/ZGUAlYkNPgTMYQ4VNYT/YQw/NIzYM/tsNrjgg/1DNMjZAS3/NOygZmsGazWm1DpsdoDo0bxe";
+  "https://ancientsnow.com/d.mwFHzndLGKNpv/ZzG/UI/-eYmS9HuLZzUal/kmP_T/Yd4pNpT/YhweNFzzM/tONUjOgn1YNhjWAY3GNkyvZnsta/Wq1rpGdgDk0/xf";
 
 function getPageParam(name) {
   return String(pageParams.get(name) || "").trim();
