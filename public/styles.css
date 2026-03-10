@@ -1048,9 +1048,9 @@ body.preview-mode .preview-inner {
 }
 
 .player-action-btn.comments {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(120, 160, 190, 0.25);
-  color: #e8f1ff;
+  background: rgba(10, 16, 24, 0.74);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
 }
 
 .player-action-btn .btn-icon {
