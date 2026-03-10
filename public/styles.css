@@ -388,23 +388,30 @@ body {
   right: 8px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 8px;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 9px;
   border-radius: 999px;
   background: linear-gradient(135deg, rgba(13, 25, 35, 0.9), rgba(23, 48, 65, 0.9));
   border: 1px solid rgba(255, 255, 255, 0.16);
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 700;
   color: #e9f4ff;
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.25);
+  line-height: 1;
 }
 
 .card-badge-icon {
-  font-size: 0.86rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  line-height: 1;
 }
 
 .card-badge-text {
   letter-spacing: 0.01em;
+  line-height: 1;
 }
 
 .home-card.active .cover-wrap {

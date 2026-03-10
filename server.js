@@ -793,8 +793,9 @@ function isLikelyMediaRequest(req) {
     .trim()
     .toLowerCase();
 
+  // Jika header fetch metadata tidak tersedia (mis. WebView), tetap izinkan.
   if (STREAM_REQUIRE_FETCH_METADATA && !fetchDest) {
-    return false;
+    return true;
   }
 
   if (fetchDest && !["video", "audio", "empty"].includes(fetchDest)) {
@@ -819,8 +820,9 @@ function isLikelyApiFetchRequest(req) {
     .trim()
     .toLowerCase();
 
+  // Jika header fetch metadata tidak tersedia (mis. WebView), tetap izinkan.
   if (STREAM_REQUIRE_FETCH_METADATA && !fetchDest) {
-    return false;
+    return true;
   }
 
   if (fetchDest && fetchDest !== "empty") {
