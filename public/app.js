@@ -493,7 +493,12 @@ async function playVastPreroll({ dramaId, episodeNumber }) {
     imaAdsLoader.addEventListener(google.ima.AdsManagerLoadedEvent.Type.ADS_MANAGER_LOADED, (event) => {
       try {
         imaAdsManager = event.getAdsManager(elements.videoPlayer);
-        imaAdsManager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, () => {
+        imaAdsManager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, (event) => {
+          const error = event?.getError?.();
+          const message = error ? `${error.getErrorCode?.() || ""} ${error.getMessage?.() || ""}`.trim() : "";
+          if (message) {
+            setStatus(`Iklan error: ${message}`, "error");
+          }
           cleanup();
           finish({ played: false, reason: "ad-error" });
         });
@@ -515,7 +520,12 @@ async function playVastPreroll({ dramaId, episodeNumber }) {
       }
     });
 
-    imaAdsLoader.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, () => {
+    imaAdsLoader.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, (event) => {
+      const error = event?.getError?.();
+      const message = error ? `${error.getErrorCode?.() || ""} ${error.getMessage?.() || ""}`.trim() : "";
+      if (message) {
+        setStatus(`Iklan error: ${message}`, "error");
+      }
       cleanup();
       finish({ played: false, reason: "ad-error" });
     });
