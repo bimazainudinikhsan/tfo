@@ -19,7 +19,7 @@ const SUBSCRIBE_PROMO_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const countFormatter = new Intl.NumberFormat("id-ID");
 const pageParams = new URLSearchParams(window.location.search || "");
 const AD_VAST_TAG_URL =
-  "https://ancientsnow.com/d.mwFHzndLGKNpv/ZzG/UI/-eYmS9HuLZzUal/kmP_T/Yd4pNpT/YhweNFzzM/tONUjOgn1YNhjWAY3GNkyvZnsta/Wq1rpGdgDk0/xf";
+  "https://ancientsnow.com/d-m.FPzmdlGrNKvZZrGOUX/BeQmW9RusZeUCl/kXP/TMYg4AN/TRYtwYN/z-MvtQN/jag/1/NzjEAs3nNywX";
 
 function getPageParam(name) {
   return String(pageParams.get(name) || "").trim();
@@ -523,7 +523,11 @@ async function maybePlayPreroll(episode) {
     return;
   }
   adPrerollPlayed.add(key);
-  await playVastPreroll({ dramaId: state.drama?.id, episodeNumber: episode.number });
+  const timeoutMs = 3500;
+  const timeoutPromise = new Promise((resolve) => {
+    setTimeout(resolve, timeoutMs);
+  });
+  await Promise.race([playVastPreroll({ dramaId: state.drama?.id, episodeNumber: episode.number }), timeoutPromise]);
 }
 
 function sanitizeCountValue(value) {
