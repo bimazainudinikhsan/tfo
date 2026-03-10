@@ -16,7 +16,8 @@ const YOUTUBE_VIEWER_ID_KEY = "top_film_one_viewer_id_v1";
 const YOUTUBE_VERIFY_MESSAGE_TYPE = "top-film-one-youtube-verify";
 const SUBSCRIBE_PROMO_COOLDOWN_KEY = "top_film_one_subscribe_promo_cooldown_until_v1";
 const SUBSCRIBE_PROMO_COOLDOWN_MS = 24 * 60 * 60 * 1000;
-const MONETAG_ZONE_ID = "10708414";
+const MONETAG_ZONE_ID = "10708502";
+const MONETAG_SCRIPT_URL = "https://gizokraijaw.net/vignette.min.js";
 const countFormatter = new Intl.NumberFormat("id-ID");
 const pageParams = new URLSearchParams(window.location.search || "");
 
@@ -404,7 +405,7 @@ function loadMonetagOnce() {
 
     const script = document.createElement("script");
     script.dataset.zone = MONETAG_ZONE_ID;
-    script.src = "https://al5sm.com/tag.min.js";
+    script.src = MONETAG_SCRIPT_URL;
     target.appendChild(script);
     monetagLoaded = true;
   } catch {
