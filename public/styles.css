@@ -664,6 +664,7 @@ body.preview-mode .preview-inner {
   border-radius: 12px;
   padding: 14px;
   backdrop-filter: blur(2px);
+  margin-bottom: 18px;
 }
 
 .preview-synopsis h3 {
@@ -678,13 +679,15 @@ body.preview-mode .preview-inner {
 }
 
 .comments-panel {
-  margin-top: 18px;
+  width: min(360px, 100%);
+  margin: 0 0 0 auto;
   padding: 16px;
   border-radius: 18px;
   background: linear-gradient(135deg, rgba(13, 24, 34, 0.85), rgba(12, 18, 26, 0.75));
   border: 1px solid rgba(120, 160, 190, 0.25);
   box-shadow: 0 16px 40px rgba(2, 8, 16, 0.35);
   backdrop-filter: blur(12px);
+  text-align: left;
 }
 
 .comments-header {
@@ -766,9 +769,67 @@ body.preview-mode .preview-inner {
   margin-bottom: 6px;
 }
 
+.comment-meta-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .comment-time {
   color: #7f96ae;
   font-size: 0.7rem;
+}
+
+.comment-badge {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 90, 122, 0.2);
+  color: #ff9ab2;
+  margin-right: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.comment-reply {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(9, 16, 26, 0.6);
+  border-left: 3px solid rgba(255, 90, 122, 0.7);
+  font-size: 0.75rem;
+  color: #cbd7e8;
+}
+
+.comment-reply strong {
+  color: #f6c6d8;
+}
+
+.comment-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.comment-action-btn {
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #dbe7f5;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.comment-action-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.comment-edited {
+  margin-left: 6px;
+  font-size: 0.68rem;
+  color: #8fa7be;
 }
 
 .comment-name {
@@ -826,6 +887,35 @@ body.preview-mode .preview-inner {
 .comment-submit:hover {
   transform: translateY(-1px);
   box-shadow: 0 8px 16px rgba(255, 90, 122, 0.25);
+}
+
+.comment-composer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #dce7f5;
+  font-size: 0.75rem;
+  margin-top: 8px;
+}
+
+.comment-composer-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comment-composer-cancel {
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #f2f6ff;
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.7rem;
 }
 
 .player-live-comments {

@@ -153,6 +153,10 @@
           </div>
           <p id="previewDramaClicks" class="preview-drama-clicks">Diklik - kali</p>
           <button id="watchNowBtn" class="watch-now-btn" type="button">Tonton Sekarang</button>
+          <div class="preview-synopsis">
+            <h3>Sinopsis</h3>
+            <p id="previewSynopsis">-</p>
+          </div>
           <section id="previewComments" class="comments-panel">
             <div class="comments-header">
               <div class="comments-title">
@@ -162,6 +166,10 @@
               <span id="previewCommentCount" class="comment-count">0</span>
             </div>
             <div id="previewCommentList" class="comment-list"></div>
+            <div id="previewCommentComposer" class="comment-composer hidden">
+              <span id="previewCommentComposerText" class="comment-composer-text">Balas</span>
+              <button id="previewCommentComposerCancel" class="comment-composer-cancel" type="button">Batal</button>
+            </div>
             <form id="previewCommentForm" class="comment-form" autocomplete="off">
               <input
                 id="previewCommentInput"
@@ -174,10 +182,6 @@
               <button class="comment-submit" type="submit">Kirim</button>
             </form>
           </section>
-          <div class="preview-synopsis">
-            <h3>Sinopsis</h3>
-            <p id="previewSynopsis">-</p>
-          </div>
         </div>
       </section>
 
@@ -218,6 +222,10 @@
               </button>
             </div>
             <div id="playerCommentList" class="comment-list"></div>
+            <div id="playerCommentComposer" class="comment-composer hidden">
+              <span id="playerCommentComposerText" class="comment-composer-text">Balas</span>
+              <button id="playerCommentComposerCancel" class="comment-composer-cancel" type="button">Batal</button>
+            </div>
             <form id="playerCommentForm" class="comment-form" autocomplete="off">
               <input
                 id="playerCommentInput"

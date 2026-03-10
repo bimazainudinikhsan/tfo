@@ -11,6 +11,7 @@ const WATCH_PROGRESS_KEY = "teleminidrama_watch_progress_v1";
 const SAVED_HISTORY_KEY = "teleminidrama_saved_history_v1";
 const WATCH_PROGRESS_SAVE_INTERVAL_MS = 5000;
 const ADMIN_PREVIEW_TOKEN_KEY = "teleminidrama_admin_preview_token";
+const ADMIN_TOKEN_STORAGE_KEY = "teleminidrama_admin_token";
 const LIBRARY_REALTIME_POLL_MS = 7000;
 const YOUTUBE_VIEWER_ID_KEY = "top_film_one_viewer_id_v1";
 const YOUTUBE_VERIFY_MESSAGE_TYPE = "top-film-one-youtube-verify";
@@ -99,6 +100,14 @@ function getViewerDisplayName() {
   }
 
   return "Pengunjung";
+}
+
+function readAdminTokenFromStorage() {
+  try {
+    return String(localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) || "").trim();
+  } catch {
+    return "";
+  }
 }
 
 function readFavorites() {
@@ -237,6 +246,12 @@ const state = {
     dramaId: "",
     items: []
   },
+  commentComposer: {
+    mode: "",
+    targetId: "",
+    targetName: "",
+    targetMessage: ""
+  },
   commentsPollTimer: null,
   commentsPollInFlight: false,
   liveCommentsVisible: false,
@@ -248,6 +263,7 @@ const state = {
   },
   firebaseApp: null,
   firebaseDb: null,
+  adminCommentToken: "",
   youtubeGate: {
     enabled: false,
     verified: true,
@@ -302,6 +318,9 @@ const elements = {
   previewCommentList: document.getElementById("previewCommentList"),
   previewCommentForm: document.getElementById("previewCommentForm"),
   previewCommentInput: document.getElementById("previewCommentInput"),
+  previewCommentComposer: document.getElementById("previewCommentComposer"),
+  previewCommentComposerText: document.getElementById("previewCommentComposerText"),
+  previewCommentComposerCancel: document.getElementById("previewCommentComposerCancel"),
   detailLayout: document.getElementById("detailLayout"),
   dramaPicker: document.getElementById("dramaPicker"),
   playerBackBtn: document.getElementById("playerBackBtn"),
@@ -326,6 +345,9 @@ const elements = {
   playerCommentList: document.getElementById("playerCommentList"),
   playerCommentForm: document.getElementById("playerCommentForm"),
   playerCommentInput: document.getElementById("playerCommentInput"),
+  playerCommentComposer: document.getElementById("playerCommentComposer"),
+  playerCommentComposerText: document.getElementById("playerCommentComposerText"),
+  playerCommentComposerCancel: document.getElementById("playerCommentComposerCancel"),
   episodeSheetBackdrop: document.getElementById("episodeSheetBackdrop"),
   episodeSheet: document.getElementById("episodeSheet"),
   episodeSheetGrid: document.getElementById("episodeSheetGrid"),
@@ -377,6 +399,17 @@ function buildRequestHeaders(extraHeaders = {}) {
   return {
     ...buildViewerHeaders(),
     ...buildAdminPreviewHeaders(),
+    ...(extraHeaders || {})
+  };
+}
+
+function buildCommentRequestHeaders(extraHeaders = {}) {
+  const adminToken = readAdminTokenFromStorage() || state.adminCommentToken || "";
+  state.adminCommentToken = adminToken;
+  const adminHeader = adminToken ? { "x-admin-token": adminToken } : {};
+  return {
+    ...buildRequestHeaders(),
+    ...adminHeader,
     ...(extraHeaders || {})
   };
 }
@@ -917,6 +950,57 @@ function getCommentAvatarInfo(comment) {
   };
 }
 
+function buildReplyPreview(comment) {
+  const name = String(comment?.name || "Pengunjung").trim() || "Pengunjung";
+  const message = String(comment?.message || "").trim();
+  if (!message) {
+    return `${name}`;
+  }
+  const clipped = message.length > 60 ? `${message.slice(0, 60)}...` : message;
+  return `${name}: ${clipped}`;
+}
+
+function setCommentComposer(mode, comment) {
+  const nextMode = mode === "reply" || mode === "edit" ? mode : "";
+  state.commentComposer.mode = nextMode;
+  state.commentComposer.targetId = String(comment?.id || "").trim();
+  state.commentComposer.targetName = String(comment?.name || "Pengunjung").trim() || "Pengunjung";
+  state.commentComposer.targetMessage = String(comment?.message || "").trim();
+
+  const composerText =
+    nextMode === "reply"
+      ? `Balas ke ${buildReplyPreview(comment)}`
+      : nextMode === "edit"
+      ? `Edit komentar`
+      : "";
+
+  if (elements.previewCommentComposer) {
+    elements.previewCommentComposer.classList.toggle("hidden", !nextMode);
+  }
+  if (elements.playerCommentComposer) {
+    elements.playerCommentComposer.classList.toggle("hidden", !nextMode);
+  }
+  if (elements.previewCommentComposerText) {
+    elements.previewCommentComposerText.textContent = composerText;
+  }
+  if (elements.playerCommentComposerText) {
+    elements.playerCommentComposerText.textContent = composerText;
+  }
+}
+
+function clearCommentComposer() {
+  state.commentComposer.mode = "";
+  state.commentComposer.targetId = "";
+  state.commentComposer.targetName = "";
+  state.commentComposer.targetMessage = "";
+  if (elements.previewCommentComposer) {
+    elements.previewCommentComposer.classList.add("hidden");
+  }
+  if (elements.playerCommentComposer) {
+    elements.playerCommentComposer.classList.add("hidden");
+  }
+}
+
 function normalizeCommentTextInput(value) {
   const cleaned = String(value || "")
     .replace(/\s+/g, " ")
@@ -937,6 +1021,7 @@ function renderCommentList(comments, container) {
     return;
   }
 
+  const isPreviewContainer = container === elements.previewCommentList;
   container.innerHTML = "";
   if (!Array.isArray(comments) || comments.length === 0) {
     const empty = document.createElement("div");
@@ -950,6 +1035,7 @@ function renderCommentList(comments, container) {
   for (const comment of comments) {
     const item = document.createElement("div");
     item.className = "comment-item";
+    item.dataset.commentId = String(comment?.id || "");
 
     const avatarInfo = getCommentAvatarInfo(comment);
     const avatar = document.createElement("div");
@@ -964,10 +1050,19 @@ function renderCommentList(comments, container) {
     const meta = document.createElement("div");
     meta.className = "comment-meta";
 
+    const metaLeft = document.createElement("div");
+    metaLeft.className = "comment-meta-left";
+
     const name = document.createElement("span");
     name.className = "comment-name";
     name.textContent = avatarInfo.name;
     name.style.color = avatarInfo.color.accent;
+
+    const adminBadge = comment?.admin ? document.createElement("span") : null;
+    if (adminBadge) {
+      adminBadge.className = "comment-badge";
+      adminBadge.textContent = "Admin";
+    }
 
     const time = document.createElement("span");
     time.className = "comment-time";
@@ -977,8 +1072,70 @@ function renderCommentList(comments, container) {
     message.className = "comment-text";
     message.textContent = String(comment?.message || "");
 
-    meta.append(name, time);
+    metaLeft.appendChild(name);
+    if (adminBadge) {
+      metaLeft.appendChild(adminBadge);
+    }
+    meta.append(metaLeft, time);
+
+    const replyTarget = comment?.replyTo;
+    if (replyTarget && (replyTarget.message || replyTarget.name)) {
+      const reply = document.createElement("div");
+      reply.className = "comment-reply";
+      const replyTitle = document.createElement("strong");
+      replyTitle.textContent = `Balas ke ${String(replyTarget.name || "Pengunjung")}`;
+      const replyText = document.createElement("span");
+      replyText.textContent = ` - ${String(replyTarget.message || "")}`;
+      reply.append(replyTitle, replyText);
+      body.append(reply);
+    }
+
     body.append(meta, message);
+
+    if (comment?.edited) {
+      const editedBadge = document.createElement("span");
+      editedBadge.className = "comment-edited";
+      editedBadge.textContent = "edited";
+      meta.appendChild(editedBadge);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "comment-actions";
+    const replyBtn = document.createElement("button");
+    replyBtn.type = "button";
+    replyBtn.className = "comment-action-btn";
+    replyBtn.textContent = "Balas";
+    replyBtn.addEventListener("click", () => {
+      setCommentComposer("reply", comment);
+      if (isPreviewContainer && elements.previewCommentInput) {
+        elements.previewCommentInput.focus();
+      } else if (!isPreviewContainer && elements.playerCommentInput) {
+        elements.playerCommentInput.focus();
+      }
+    });
+    actions.appendChild(replyBtn);
+
+    const canEdit = String(comment?.viewerId || "") === String(state.viewerId || "") || state.adminPreviewEnabled;
+    if (canEdit) {
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "comment-action-btn";
+      editBtn.textContent = "Edit";
+      editBtn.addEventListener("click", () => {
+        setCommentComposer("edit", comment);
+        if (isPreviewContainer && elements.previewCommentInput) {
+          elements.previewCommentInput.value = String(comment?.message || "");
+          elements.previewCommentInput.focus();
+        }
+        if (!isPreviewContainer && elements.playerCommentInput) {
+          elements.playerCommentInput.value = String(comment?.message || "");
+          elements.playerCommentInput.focus();
+        }
+      });
+      actions.appendChild(editBtn);
+    }
+
+    body.append(actions);
     item.append(avatar, body);
     fragment.appendChild(item);
   }
@@ -1133,14 +1290,18 @@ async function postCommentForDrama(message) {
     return;
   }
 
+  const isAdminComment = Boolean(state.adminPreviewEnabled || readAdminTokenFromStorage() || state.adminCommentToken);
   const payloadBody = {
     message: cleaned,
-    name: getViewerDisplayName()
+    name: isAdminComment ? "Admin" : getViewerDisplayName()
   };
+  if (state.commentComposer.mode === "reply" && state.commentComposer.targetId) {
+    payloadBody.replyToId = state.commentComposer.targetId;
+  }
 
   const response = await fetch(`/api/comments/${encodeURIComponent(dramaId)}`, {
     method: "POST",
-    headers: buildRequestHeaders({
+    headers: buildCommentRequestHeaders({
       "content-type": "application/json"
     }),
     body: JSON.stringify(payloadBody)
@@ -1154,11 +1315,47 @@ async function postCommentForDrama(message) {
     setStatus("Komentar disaring demi kenyamanan bersama.", "ok");
   }
 
+  clearCommentComposer();
   if (payload.comments) {
     applyComments(dramaId, payload.comments);
   } else if (payload.comment) {
     const nextItems = [...(state.comments?.items || []), payload.comment];
     applyComments(dramaId, nextItems);
+  }
+}
+
+async function editCommentForDrama(commentId, message) {
+  const dramaId = String(state.drama?.id || "").trim();
+  const cleaned = normalizeCommentTextInput(message);
+  const safeCommentId = String(commentId || "").trim();
+  if (!dramaId || !cleaned || !safeCommentId) {
+    return;
+  }
+
+  const response = await fetch(
+    `/api/comments/${encodeURIComponent(dramaId)}/${encodeURIComponent(safeCommentId)}`,
+    {
+      method: "PUT",
+      headers: buildCommentRequestHeaders({
+        "content-type": "application/json"
+      }),
+      body: JSON.stringify({
+        message: cleaned
+      })
+    }
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.message || "Gagal mengedit komentar.");
+  }
+
+  if (payload.moderated) {
+    setStatus("Komentar disaring demi kenyamanan bersama.", "ok");
+  }
+
+  clearCommentComposer();
+  if (payload.comments) {
+    applyComments(dramaId, payload.comments);
   }
 }
 
@@ -1223,7 +1420,11 @@ async function handleCommentSubmit(inputElement) {
 
   inputElement.value = "";
   try {
-    await postCommentForDrama(message);
+    if (state.commentComposer.mode === "edit" && state.commentComposer.targetId) {
+      await editCommentForDrama(state.commentComposer.targetId, message);
+    } else {
+      await postCommentForDrama(message);
+    }
     renderComments();
   } catch (error) {
     setStatus(error.message, "error");
@@ -2732,6 +2933,7 @@ async function setDramaById(dramaId, { openFirstEpisode = false, trackDramaClick
   state.drama = drama;
   if (state.comments.dramaId !== drama.id) {
     applyComments(drama.id, []);
+    clearCommentComposer();
   }
   if (trackDramaClick) {
     trackDramaClickMetric(drama.id);
@@ -3172,6 +3374,18 @@ function wireEvents() {
     });
   }
 
+  if (elements.previewCommentComposerCancel) {
+    elements.previewCommentComposerCancel.addEventListener("click", () => {
+      clearCommentComposer();
+    });
+  }
+
+  if (elements.playerCommentComposerCancel) {
+    elements.playerCommentComposerCancel.addEventListener("click", () => {
+      clearCommentComposer();
+    });
+  }
+
   if (elements.toggleLiveCommentsBtn) {
     elements.toggleLiveCommentsBtn.addEventListener("click", () => {
       setLiveCommentsVisible(!state.liveCommentsVisible);
@@ -3209,6 +3423,7 @@ function wireEvents() {
 
 async function init() {
   try {
+    state.adminCommentToken = readAdminTokenFromStorage();
     elements.videoPlayer.controls = false;
     elements.videoPlayer.setAttribute("controlsList", "nodownload noplaybackrate noremoteplayback");
     elements.videoPlayer.setAttribute("disablePictureInPicture", "true");

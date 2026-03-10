@@ -1470,6 +1470,26 @@ function normalizeCommentName(value) {
   return cleaned.slice(0, COMMENT_NAME_MAX_LENGTH);
 }
 
+function normalizeReplyReference(input) {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+  const id = String(input.id || "").trim();
+  if (!id) {
+    return null;
+  }
+  const name = normalizeCommentName(input.name) || "Pengunjung";
+  const message = normalizeCommentText(input.message);
+  if (!message) {
+    return null;
+  }
+  return {
+    id,
+    name,
+    message
+  };
+}
+
 function normalizeCommentEntry(input) {
   const message = normalizeCommentText(input?.message);
   if (!message) {
@@ -1479,6 +1499,8 @@ function normalizeCommentEntry(input) {
   const name = normalizeCommentName(input?.name) || "Pengunjung";
   const viewerId = normalizeViewerId(input?.viewerId || "");
   const createdAt = new Date(input?.createdAt || Date.now()).toISOString();
+  const updatedAt = input?.updatedAt ? new Date(input.updatedAt).toISOString() : null;
+  const replyTo = normalizeReplyReference(input?.replyTo);
   const id = String(input?.id || randomUUID()).trim() || randomUUID();
 
   return {
@@ -1486,7 +1508,11 @@ function normalizeCommentEntry(input) {
     message,
     name,
     viewerId,
-    createdAt
+    createdAt,
+    updatedAt,
+    edited: Boolean(input?.edited),
+    admin: Boolean(input?.admin),
+    replyTo
   };
 }
 
@@ -1580,6 +1606,82 @@ async function addCommentToDrama(dramaId, comment) {
   const store = await readCommentsStore();
   const current = Array.isArray(store[safeDramaId]) ? store[safeDramaId] : [];
   const nextList = normalizeCommentList([...current, normalizedComment]);
+  store[safeDramaId] = nextList;
+  await writeCommentsStore(store);
+  return nextList;
+}
+
+function findCommentById(list, commentId) {
+  const safeId = String(commentId || "").trim();
+  if (!safeId) {
+    return null;
+  }
+  return (list || []).find((item) => String(item?.id || "").trim() === safeId) || null;
+}
+
+async function addReplyCommentToDrama(dramaId, comment, replyToId) {
+  const safeDramaId = normalizeAnalyticsKey(dramaId);
+  if (!safeDramaId) {
+    throw new Error("dramaId tidak valid.");
+  }
+
+  const normalizedComment = normalizeCommentEntry(comment);
+  if (!normalizedComment) {
+    throw new Error("Komentar kosong.");
+  }
+
+  const store = await readCommentsStore();
+  const current = Array.isArray(store[safeDramaId]) ? store[safeDramaId] : [];
+  const target = findCommentById(current, replyToId);
+  if (target) {
+    normalizedComment.replyTo = {
+      id: target.id,
+      name: target.name || "Pengunjung",
+      message: target.message || ""
+    };
+  }
+
+  const nextList = normalizeCommentList([...current, normalizedComment]);
+  store[safeDramaId] = nextList;
+  await writeCommentsStore(store);
+  return nextList;
+}
+
+async function editCommentOnDrama(dramaId, commentId, message, editorViewerId, { admin = false } = {}) {
+  const safeDramaId = normalizeAnalyticsKey(dramaId);
+  if (!safeDramaId) {
+    throw new Error("dramaId tidak valid.");
+  }
+
+  const safeCommentId = String(commentId || "").trim();
+  if (!safeCommentId) {
+    throw new Error("commentId tidak valid.");
+  }
+
+  const store = await readCommentsStore();
+  const current = Array.isArray(store[safeDramaId]) ? store[safeDramaId] : [];
+  const target = findCommentById(current, safeCommentId);
+  if (!target) {
+    throw new Error("Komentar tidak ditemukan.");
+  }
+
+  const safeViewerId = normalizeViewerId(editorViewerId);
+  if (!admin) {
+    if (!safeViewerId || safeViewerId !== normalizeViewerId(target.viewerId)) {
+      throw new Error("Tidak diizinkan mengedit komentar ini.");
+    }
+  }
+
+  const normalizedMessage = normalizeCommentText(message);
+  if (!normalizedMessage) {
+    throw new Error("Komentar wajib diisi.");
+  }
+
+  target.message = normalizedMessage;
+  target.edited = true;
+  target.updatedAt = new Date().toISOString();
+
+  const nextList = normalizeCommentList(current);
   store[safeDramaId] = nextList;
   await writeCommentsStore(store);
   return nextList;
@@ -3073,26 +3175,78 @@ app.post("/api/comments/:dramaId", async (req, res) => {
     });
   }
 
-  const name = normalizeCommentName(req.body?.name || req.query?.name) || "Pengunjung";
+  const isAdmin = isAdminAuthorizedRequest(req);
+  const baseName = normalizeCommentName(req.body?.name || req.query?.name);
+  const name = isAdmin ? baseName || "Admin" : baseName || "Pengunjung";
   const moderatedResult = moderateCommentMessage(message);
   const viewerId = getViewerIdFromRequest(req);
   const comment = {
     message: moderatedResult.message,
-    name,
+    name: isAdmin ? name || "Admin" : name,
     viewerId,
+    admin: isAdmin,
     createdAt: new Date().toISOString()
   };
 
-  const comments = await addCommentToDrama(dramaId, comment);
+  const replyToId = String(req.body?.replyToId || req.query?.replyToId || "").trim();
+  const comments = replyToId
+    ? await addReplyCommentToDrama(dramaId, comment, replyToId)
+    : await addCommentToDrama(dramaId, comment);
   return res.json({
     message: "Komentar terkirim.",
     dramaId,
     comments,
-    moderated: moderatedResult.moderated
+    moderated: moderatedResult.moderated,
+    admin: isAdmin
   });
   } catch (error) {
     return res.status(500).json({
       message: "Gagal mengirim komentar.",
+      detail: error.message
+    });
+  }
+});
+
+app.put("/api/comments/:dramaId/:commentId", async (req, res) => {
+  try {
+    const dramaId = normalizeAnalyticsKey(req.params.dramaId || req.body?.dramaId || req.query?.dramaId);
+    if (!dramaId) {
+      return res.status(400).json({
+        message: "dramaId wajib diisi."
+      });
+    }
+
+    const commentId = String(req.params.commentId || req.body?.commentId || req.query?.commentId || "").trim();
+    if (!commentId) {
+      return res.status(400).json({
+        message: "commentId wajib diisi."
+      });
+    }
+
+    const message = normalizeCommentText(req.body?.message || req.query?.message);
+    if (!message) {
+      return res.status(400).json({
+        message: "Komentar wajib diisi."
+      });
+    }
+
+    const moderatedResult = moderateCommentMessage(message);
+    const viewerId = getViewerIdFromRequest(req);
+    const isAdmin = isAdminAuthorizedRequest(req);
+    const comments = await editCommentOnDrama(dramaId, commentId, moderatedResult.message, viewerId, {
+      admin: isAdmin
+    });
+
+    return res.json({
+      message: "Komentar diperbarui.",
+      dramaId,
+      commentId,
+      comments,
+      moderated: moderatedResult.moderated
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Gagal mengedit komentar.",
       detail: error.message
     });
   }
