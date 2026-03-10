@@ -26,6 +26,7 @@ const AD_PREROLL_PLAYBACK_TIMEOUT_MS = 60000;
 const COMMENTS_POLL_INTERVAL_MS = 5000;
 const COMMENT_MESSAGE_MAX_LENGTH = 200;
 const COMMENT_RENDER_LIMIT = 60;
+const PLAYER_CONTROLS_AUTOHIDE_MS = 3000;
 const COMMENT_COLOR_PALETTE = [
   { bg: "#3b82f6", text: "#eff6ff", accent: "#9ac2ff" },
   { bg: "#10b981", text: "#ecfdf5", accent: "#86efac" },
@@ -264,6 +265,8 @@ const state = {
   firebaseApp: null,
   firebaseDb: null,
   adminCommentToken: "",
+  playerControlsVisible: false,
+  playerControlsHideTimer: null,
   youtubeGate: {
     enabled: false,
     verified: true,
@@ -332,6 +335,7 @@ const elements = {
   playerLoaderText: document.getElementById("playerLoaderText"),
   playerControls: document.getElementById("playerControls"),
   playPauseBtn: document.getElementById("playPauseBtn"),
+  fullscreenBtn: document.getElementById("fullscreenBtn"),
   playerCurrentTime: document.getElementById("playerCurrentTime"),
   playerSeek: document.getElementById("playerSeek"),
   playerDuration: document.getElementById("playerDuration"),
@@ -2704,8 +2708,13 @@ function updatePlayPauseButton() {
 
 function updatePlaybackControlsVisibility() {
   const hasSource = Boolean(elements.videoPlayer.getAttribute("src"));
-  const canShow = state.viewMode === "player" && !elements.detailLayout.classList.contains("is-playing");
+  const isPlaying = !elements.videoPlayer.paused && !elements.videoPlayer.ended;
+  const canShow = state.viewMode === "player" && (state.playerControlsVisible || !isPlaying);
   elements.playerControls.classList.toggle("hidden", !(hasSource && canShow));
+  elements.detailLayout.classList.toggle(
+    "show-controls",
+    Boolean(hasSource && isPlaying && state.playerControlsVisible)
+  );
 }
 
 function updateCenterPlayButton() {
@@ -2714,6 +2723,113 @@ function updateCenterPlayButton() {
   elements.centerPlayBtn.classList.toggle("hidden", !(hasSource && canShow));
   updatePlaybackControlsVisibility();
   updatePlayPauseButton();
+}
+
+function showPlayerControls({ autoHide = true } = {}) {
+  state.playerControlsVisible = true;
+  updatePlaybackControlsVisibility();
+  if (state.playerControlsHideTimer) {
+    clearTimeout(state.playerControlsHideTimer);
+    state.playerControlsHideTimer = null;
+  }
+  if (autoHide && !elements.videoPlayer.paused) {
+    state.playerControlsHideTimer = setTimeout(() => {
+      state.playerControlsVisible = false;
+      updatePlaybackControlsVisibility();
+    }, PLAYER_CONTROLS_AUTOHIDE_MS);
+  }
+}
+
+function hidePlayerControls() {
+  if (state.playerControlsHideTimer) {
+    clearTimeout(state.playerControlsHideTimer);
+    state.playerControlsHideTimer = null;
+  }
+  state.playerControlsVisible = false;
+  updatePlaybackControlsVisibility();
+}
+
+function isFullscreenActive() {
+  return (
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    elements.videoPlayer?.webkitDisplayingFullscreen
+  );
+}
+
+async function requestPlayerFullscreen() {
+  if (!elements.videoPlayer) {
+    return;
+  }
+
+  if (isFullscreenActive()) {
+    return;
+  }
+
+  const video = elements.videoPlayer;
+  const container = elements.detailLayout;
+  try {
+    if (video.requestFullscreen) {
+      await video.requestFullscreen();
+      return;
+    }
+  } catch {
+    // lanjut fallback
+  }
+
+  try {
+    if (video.webkitEnterFullscreen) {
+      video.webkitEnterFullscreen();
+      return;
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    if (container?.requestFullscreen) {
+      await container.requestFullscreen();
+      return;
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    if (container?.webkitRequestFullscreen) {
+      container.webkitRequestFullscreen();
+    }
+  } catch {
+    // ignore
+  }
+}
+
+async function exitPlayerFullscreen() {
+  try {
+    if (document.exitFullscreen) {
+      await document.exitFullscreen();
+      return;
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+      return;
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    if (elements.videoPlayer?.webkitExitFullscreen) {
+      elements.videoPlayer.webkitExitFullscreen();
+    }
+  } catch {
+    // ignore
+  }
 }
 
 function getNextEpisodeAfter(number) {
@@ -2764,6 +2880,7 @@ function setViewMode(mode) {
     closeEpisodeSheet();
     setPlayerPlaying(false);
     setPlayerLoader(false);
+    hidePlayerControls();
     setLiveCommentsVisible(false);
   }
 
@@ -3259,6 +3376,7 @@ function wireEvents() {
   elements.shareDramaBtn.addEventListener("click", shareCurrentDrama);
   elements.centerPlayBtn.addEventListener("click", async () => {
     try {
+      await requestPlayerFullscreen();
       await elements.videoPlayer.play();
     } catch {
       // Abaikan jika browser masih menolak autoplay.
@@ -3267,6 +3385,7 @@ function wireEvents() {
   elements.playPauseBtn.addEventListener("click", async () => {
     if (elements.videoPlayer.paused) {
       try {
+        await requestPlayerFullscreen();
         await elements.videoPlayer.play();
       } catch {
         // Abaikan jika browser menolak autoplay.
@@ -3279,6 +3398,7 @@ function wireEvents() {
   elements.playerSeek.addEventListener("input", () => {
     state.isSeeking = true;
     syncPlaybackControls({ previewTime: Number(elements.playerSeek.value) || 0 });
+    showPlayerControls({ autoHide: false });
   });
   elements.playerSeek.addEventListener("change", () => {
     const nextTime = Number(elements.playerSeek.value) || 0;
@@ -3286,6 +3406,7 @@ function wireEvents() {
     state.isSeeking = false;
     syncPlaybackControls();
     persistCurrentWatchProgress({ force: true });
+    showPlayerControls({ autoHide: true });
   });
   elements.playerSeek.addEventListener("pointerup", () => {
     const nextTime = Number(elements.playerSeek.value) || 0;
@@ -3293,6 +3414,7 @@ function wireEvents() {
     state.isSeeking = false;
     syncPlaybackControls();
     persistCurrentWatchProgress({ force: true });
+    showPlayerControls({ autoHide: true });
   });
   elements.videoPlayer.addEventListener("play", () => {
     setPlayerLoader(false);
@@ -3300,6 +3422,7 @@ function wireEvents() {
     closeEpisodeSheet();
     setPlayerHint("");
     syncPlaybackControls();
+    showPlayerControls({ autoHide: true });
   });
   elements.videoPlayer.addEventListener("loadstart", () => {
     setPlayerLoader(true, "Memuat video...");
@@ -3360,12 +3483,14 @@ function wireEvents() {
     state.isSeeking = false;
     syncPlaybackControls();
     persistCurrentWatchProgress({ force: true });
+    showPlayerControls({ autoHide: false });
   });
   elements.videoPlayer.addEventListener("ended", async () => {
     setPlayerLoader(false);
     state.isSeeking = false;
     syncPlaybackControls();
     persistCurrentWatchProgress({ force: true });
+    showPlayerControls({ autoHide: false });
     await playNextEpisodeIfAny();
   });
   elements.videoPlayer.addEventListener("error", () => {
@@ -3379,17 +3504,23 @@ function wireEvents() {
       return;
     }
 
-    if (elements.videoPlayer.paused) {
-      try {
-        await elements.videoPlayer.play();
-      } catch {
-        // Abaikan jika browser menolak autoplay.
-      }
+    if (state.playerControlsVisible) {
+      hidePlayerControls();
       return;
     }
 
-    elements.videoPlayer.pause();
+    showPlayerControls({ autoHide: true });
   });
+
+  if (elements.fullscreenBtn) {
+    elements.fullscreenBtn.addEventListener("click", async () => {
+      if (isFullscreenActive()) {
+        await exitPlayerFullscreen();
+        return;
+      }
+      await requestPlayerFullscreen();
+    });
+  }
 
   if (elements.dramaPicker) {
     elements.dramaPicker.addEventListener("change", async () => {

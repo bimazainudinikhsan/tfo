@@ -208,7 +208,10 @@
             <button id="saveDramaBtn" class="player-action-btn save" type="button">Simpan</button>
             <button id="openEpisodeSheetBtn" class="player-action-btn episode" type="button">Episode</button>
             <button id="shareDramaBtn" class="player-action-btn share" type="button">Bagikan</button>
-            <button id="toggleLiveCommentsBtn" class="player-action-btn comments" type="button">Komentar</button>
+            <button id="toggleLiveCommentsBtn" class="player-action-btn comments" type="button">
+              <span class="btn-icon" aria-hidden="true">&#128172;</span>
+              Komentar
+            </button>
           </div>
 
           <section id="playerLiveComments" class="player-live-comments hidden" aria-live="polite">
@@ -262,6 +265,10 @@
               aria-label="Geser waktu video"
             />
             <span id="playerDuration" class="player-time">00:00</span>
+            <button id="fullscreenBtn" class="fullscreen-btn" type="button" aria-label="Layar penuh">
+              <span class="btn-icon" aria-hidden="true">&#x26F6;</span>
+              Full
+            </button>
           </div>
 
           <div id="playerHint" class="player-hint">Klik Episode untuk mulai menonton.</div>
