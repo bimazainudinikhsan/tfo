@@ -1383,6 +1383,12 @@ body.player-mode #videoPlayer {
   pointer-events: auto;
 }
 
+.player-view.is-playing.show-controls .player-overlay-top,
+.player-view.is-playing.show-controls .player-side-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .player-view.is-playing #videoPlayer {
   cursor: none;
 }
