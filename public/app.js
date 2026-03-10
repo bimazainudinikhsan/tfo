@@ -558,9 +558,12 @@ async function maybePlayPreroll(episode) {
   if (adPrerollPlayed.has(key)) {
     return true;
   }
-  adPrerollPlayed.add(key);
   const result = await playVastPreroll({ dramaId: state.drama?.id, episodeNumber: episode.number });
-  return Boolean(result?.played);
+  if (result?.played) {
+    adPrerollPlayed.add(key);
+    return true;
+  }
+  return false;
 }
 
 function sanitizeCountValue(value) {
@@ -2064,6 +2067,24 @@ async function openEpisode(episodeNumber, { resumeSeconds = null, trackEpisodeCl
     return;
   }
 
+  const adKey = `drama:${state.drama?.id || ""}-ep:${episode.number}`;
+  const shouldShowAdStatus = parseBooleanFlag(episode?.adRequired) && !adPrerollPlayed.has(adKey);
+  if (shouldShowAdStatus) {
+    setPlayerLoader(true, "Memuat iklan...");
+    setStatus("Memuat iklan...", "");
+  }
+
+  const adOk = await maybePlayPreroll(episode);
+  if (!adOk) {
+    const pendingResume = state.pendingResumeSeconds;
+    clearVideo();
+    state.pendingResumeSeconds = pendingResume;
+    setPlayerLoader(false);
+    setStatus("Iklan gagal dimuat. Coba lagi sebentar.", "error");
+    setPlayerHint("Iklan gagal dimuat. Coba ulang untuk memutar episode.");
+    return;
+  }
+
   setPlayerLoader(true, "Mengambil video...");
   setStatus("Mengambil URL video...", "");
 
@@ -2094,13 +2115,6 @@ async function openEpisode(episodeNumber, { resumeSeconds = null, trackEpisodeCl
     setStatus("Video siap diputar.", "ok");
     syncPlaybackControls();
     updateCenterPlayButton();
-
-    const adOk = await maybePlayPreroll(episode);
-    if (!adOk) {
-      setStatus("Iklan gagal dimuat. Coba lagi sebentar.", "error");
-      setPlayerHint("Iklan gagal dimuat. Coba ulang untuk memutar episode.");
-      return;
-    }
 
     try {
       await elements.videoPlayer.play();
